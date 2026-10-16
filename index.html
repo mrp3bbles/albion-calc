@@ -3,41 +3,46 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Albion Refining Calc</title>
+<title>Albion Profit Calc</title>
 <style>
 :root{--bg:#14110d;--panel:#1f1a14;--line:#3a3127;--text:#e8dcc6;--dim:#9c8f7a;--gold:#d9a84e;--pos:#6fcf73;--neg:#e46a5a}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,sans-serif;padding:16px}
 h1{font-size:20px;color:var(--gold);margin:0 0 12px}
 h3{margin:12px 0 6px;font-size:13px;color:var(--gold)}
-details,section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
-summary{cursor:pointer;color:var(--gold)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+nav{display:flex;gap:6px;margin-bottom:12px}
+nav button{background:var(--panel);color:var(--text);border:1px solid var(--line)}
+nav button.on{background:var(--gold);color:#1a1208}
 .row{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
 label{display:flex;flex-direction:column;gap:2px;color:var(--dim);font-size:12px}
 label.chk{flex-direction:row;align-items:center;gap:6px}
 input,select,button{background:#0f0c09;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:5px 6px;font:inherit}
 input[type=number]{width:80px}
 button{background:var(--gold);color:#1a1208;font-weight:600;cursor:pointer;border:0;padding:7px 14px}
+button.ghost{background:transparent;color:var(--gold);border:1px solid var(--gold)}
 .wrap{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
-th,td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th,td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;vertical-align:middle}
 th{color:var(--dim);font-weight:500}
 td:first-child,th:first-child{text-align:left}
 td input{width:80px;text-align:right}
+td input.spec{width:52px}
+.mats{display:flex;gap:4px;justify-content:flex-end}
+.mats input{width:72px}
 td img{width:28px;height:28px;vertical-align:middle;margin-right:4px}
 .pos{color:var(--pos)}.neg{color:var(--neg)}.dim{color:var(--dim)}
 .hint{color:var(--dim);font-size:12px;margin:6px 0 0}
+[hidden]{display:none!important}
+code{background:#0f0c09;padding:2px 5px;border-radius:4px;word-break:break-all}
 </style>
 </head>
 <body>
-<h1>Albion Refining Calc · EU</h1>
+<h1>Albion Profit Calc · EU</h1>
+<nav><button data-tab="refine">Refining</button><button data-tab="craft">Crafting</button><button data-tab="settings">Settings &amp; sync</button></nav>
 
 <section>
   <div class="row">
-    <label>Material<select data-k="mat"><option value="leather">Leather</option><option value="cloth">Cloth</option></select></label>
-    <label>Refine in<select data-k="refineCity" class="cities"><option value="">Bonus city</option></select></label>
-    <label>Buy in<select data-k="buyCity" class="cities"><option value="">Same as refine</option></select></label>
-    <label>Sell in<select data-k="sellCity" class="cities"><option value="">Same as refine</option></select></label>
     <label>Buy via<select data-k="buyMode"><option value="instant">Instant buy</option><option value="order">Buy order</option></select></label>
     <label>Sell via<select data-k="sellMode"><option value="order">Sell order</option><option value="instant">Instant sell</option></select></label>
     <label>Crafts<input type="number" data-k="qty" min="1"></label>
@@ -48,106 +53,197 @@ td img{width:28px;height:28px;vertical-align:middle;margin-right:4px}
   <p class="hint" id="status"></p>
 </section>
 
-<section class="wrap"><table id="tbl"></table>
-  <p class="hint">Price cells are editable. Type what you see in-game to override stale data (Refresh clears overrides). Prices older than 24h are red.</p>
-</section>
+<div data-page="refine">
+  <section>
+    <div class="row">
+      <label>Material<select data-k="mat"><option value="leather">Leather</option><option value="cloth">Cloth</option></select></label>
+      <label>Refine in<select data-k="refineCity" class="cities"><option value="">Bonus city</option></select></label>
+      <label>Buy in<select data-k="buyCity" class="cities"><option value="">Same as refine</option></select></label>
+      <label>Sell in<select data-k="sellCity" class="cities"><option value="">Same as refine</option></select></label>
+    </div>
+  </section>
+  <section class="wrap"><table id="tbl"></table>
+    <p class="hint">Price cells are editable. Type what you see in-game to override stale data (Refresh clears overrides). Prices older than 24h are red.</p>
+  </section>
+  <section>
+    <h3>Refining spec</h3>
+    <p class="hint">Without focus, spec doesn't change refining profit. It only lowers focus cost (the Focus column).</p>
+    <div class="wrap"><table id="spec"></table></div>
+  </section>
+</div>
 
-<details>
-  <summary>Spec &amp; focus</summary>
-  <p class="hint">Without focus, spec doesn't change refining profit. It only lowers focus cost. Enter a tier's base focus cost (at 0 spec) to see silver per focus point.</p>
-  <div class="wrap"><table id="spec"></table></div>
-  <div class="row" style="margin-top:8px"><label>FCE per spec level<input type="number" data-k="fcePerLevel"></label></div>
-</details>
+<div data-page="craft">
+  <section>
+    <div class="row">
+      <label>Category<select data-k="cCat" id="cats"></select></label>
+      <label>Tier<select data-k="cTier"><option value="0">All</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+      <label>Enchant<select data-k="cEnch"><option value="-1">All</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+      <label>Craft in<select data-k="cCity" class="cities"><option value="">Bonus city</option></select></label>
+      <label>Buy mats in<select data-k="cBuyCity" class="cities"><option value="">Same as craft</option></select></label>
+      <label>Sell in<select data-k="cSellCity" class="cities bm"><option value="">Same as craft</option></select></label>
+    </div>
+  </section>
+  <section class="wrap"><table id="ctbl"></table>
+    <p class="hint">Spec is per item and saved. It lowers focus cost; set quality odds in Settings if you want it to count toward sell value. Artifacts and tokens are never returned. Material prices are editable.</p>
+  </section>
+</div>
 
-<details>
-  <summary>Game numbers (adjust if a patch changes them)</summary>
-  <h3>Return rate: production bonus %</h3>
-  <div class="row">
-    <label>Base<input type="number" data-k="baseBonus"></label>
-    <label>Bonus city<input type="number" data-k="cityBonus"></label>
-    <label>Focus<input type="number" data-k="focusBonus"></label>
-    <label>Daily bonus<input type="number" data-k="dailyBonus"></label>
-  </div>
-  <p class="hint">Return rate = 1 − 1/(1 + bonus%). Defaults: 15.2% royal city, 36.7% bonus city, 53.9% bonus city + focus.</p>
-  <h3>Market %</h3>
-  <div class="row">
-    <label>Tax (no premium)<input type="number" data-k="taxNoPrem" step="0.5"></label>
-    <label>Tax (premium)<input type="number" data-k="taxPrem" step="0.5"></label>
-    <label>Order setup fee<input type="number" data-k="setup" step="0.5"></label>
-  </div>
-  <h3>Station</h3>
-  <div class="row">
-    <label>Usage fee (per 100 nutrition)<input type="number" data-k="stationFee"></label>
-    <label>Nutrition factor<input type="number" data-k="nutrition" step="0.0005"></label>
-  </div>
-  <p class="hint">The fee is estimated from approximate item values. If it doesn't match what the station shows, adjust the nutrition factor.</p>
-</details>
+<div data-page="settings">
+  <section>
+    <h3>Sync across devices</h3>
+    <div id="sync"></div>
+  </section>
+  <section>
+    <h3>Return rate: production bonus %</h3>
+    <div class="row">
+      <label>Base<input type="number" data-k="baseBonus"></label>
+      <label>Refining city bonus<input type="number" data-k="cityBonus"></label>
+      <label>Crafting city bonus<input type="number" data-k="craftBonus"></label>
+      <label>Focus<input type="number" data-k="focusBonus"></label>
+      <label>Daily bonus<input type="number" data-k="dailyBonus"></label>
+    </div>
+    <p class="hint">Return rate = 1 − 1/(1 + bonus%). Defaults: 15.2% royal city, 36.7% refining bonus city, 24.8% crafting bonus city, +focus on top.</p>
+    <h3>Market %</h3>
+    <div class="row">
+      <label>Tax (no premium)<input type="number" data-k="taxNoPrem" step="0.5"></label>
+      <label>Tax (premium)<input type="number" data-k="taxPrem" step="0.5"></label>
+      <label>Order setup fee<input type="number" data-k="setup" step="0.5"></label>
+    </div>
+    <h3>Station</h3>
+    <div class="row">
+      <label>Usage fee (per 100 nutrition)<input type="number" data-k="stationFee"></label>
+      <label>Nutrition factor<input type="number" data-k="nutrition" step="0.0005"></label>
+    </div>
+    <p class="hint">Fee = item value × nutrition factor × usage fee / 100. Item values come from the game files.</p>
+    <h3>Focus efficiency (FCE)</h3>
+    <div class="row">
+      <label>Refining, per spec level<input type="number" data-k="fcePerLevel"></label>
+      <label>Crafting, own item spec<input type="number" data-k="fceItem"></label>
+      <label>Crafting, other specs in same tree<input type="number" data-k="fceTree"></label>
+    </div>
+    <p class="hint">Focus cost = base × 0.5^(FCE / 10000). Base focus costs come from the game files.</p>
+    <h3>Crafting quality odds %</h3>
+    <div class="row" id="odds"></div>
+    <p class="hint">Sell value = these odds × each quality's price (falling back to the next-lower quality when it has no price). The default (100% Normal) is the safe assumption; raise the others once you know your spec's real odds.</p>
+    <h3>Crafting bonus city per category</h3>
+    <div class="row" id="ccity"></div>
+  </section>
+</div>
 
 <script>
 const API = 'https://europe.albion-online-data.com/api/v2/stats/prices/';
+const SYNC_API = 'https://albion-calc-sync.aobakwemothabi47.workers.dev/';
 const CITIES = ['Martlock', 'Lymhurst', 'Bridgewatch', 'Fort Sterling', 'Thetford', 'Caerleon', 'Brecilien'];
+const QUALITIES = ['Normal', 'Good', 'Outstanding', 'Excellent', 'Masterpiece'];
 const MATS = {
   leather: { raw: 'HIDE', out: 'LEATHER', bonus: 'Martlock' },
   cloth:   { raw: 'FIBER', out: 'CLOTH', bonus: 'Lymhurst' },
 };
-const RAW_COUNT = { 3: 2, 4: 2, 5: 3, 6: 4, 7: 5, 8: 5 };
+const RAW_COUNT = { 4: 2, 5: 3, 6: 4, 7: 5, 8: 5 };
 const TIERS = [4, 5, 6, 7, 8], ENCH = [0, 1, 2, 3, 4];
+// ponytail: from memory of the in-game city bonuses; editable in Settings
+const CRAFT_CITY = {
+  sword: 'Lymhurst', bow: 'Lymhurst', arcanestaff: 'Lymhurst', leather_helmet: 'Lymhurst', leather_shoes: 'Lymhurst',
+  crossbow: 'Bridgewatch', dagger: 'Bridgewatch', cursestaff: 'Bridgewatch', plate_armor: 'Bridgewatch', cloth_shoes: 'Bridgewatch',
+  hammer: 'Fort Sterling', spear: 'Fort Sterling', holystaff: 'Fort Sterling', plate_helmet: 'Fort Sterling', cloth_armor: 'Fort Sterling',
+  axe: 'Martlock', quarterstaff: 'Martlock', froststaff: 'Martlock', plate_shoes: 'Martlock', offhand: 'Martlock',
+  mace: 'Thetford', naturestaff: 'Thetford', firestaff: 'Thetford', leather_armor: 'Thetford', cloth_helmet: 'Thetford',
+  knuckles: 'Caerleon', gatherergear: 'Caerleon', tools: 'Caerleon', shapeshifterstaff: 'Brecilien', cape: 'Brecilien', bag: 'Brecilien',
+};
 const DEFAULTS = {
-  mat: 'leather', refineCity: '', buyCity: '', sellCity: '', buyMode: 'instant', sellMode: 'order', qty: 100,
-  premium: false, useFocus: false,
-  baseBonus: 18, cityBonus: 40, focusBonus: 59, dailyBonus: 0,
+  tab: 'refine', buyMode: 'instant', sellMode: 'order', qty: 100, premium: false, useFocus: false,
+  mat: 'leather', refineCity: '', buyCity: '', sellCity: '',
+  cCat: 'sword', cTier: '4', cEnch: '0', cCity: '', cBuyCity: '', cSellCity: '',
+  baseBonus: 18, cityBonus: 40, craftBonus: 15, focusBonus: 59, dailyBonus: 0,
   taxNoPrem: 8, taxPrem: 4, setup: 2.5, stationFee: 400, nutrition: 0.1125,
-  fcePerLevel: 250,
+  fcePerLevel: 250, fceItem: 250, fceTree: 30,
+  odds: [100, 0, 0, 0, 0],
+  craftCity: CRAFT_CITY,
   spec: { leather: { 4: 24, 5: 14, 6: 3, 7: 0, 8: 0 }, cloth: { 4: 23, 5: 14, 6: 1, 7: 0, 8: 0 } },
-  baseFocus: { leather: { 4: '', 5: '', 6: '', 7: '', 8: '' }, cloth: { 4: '', 5: '', 6: '', 7: '', 8: '' } },
+  craftSpec: {},
 };
 
 let S = structuredClone(DEFAULTS);
-try { Object.assign(S, JSON.parse(localStorage.getItem('albionCalc') || '{}')); } catch {}
-const save = () => { try { localStorage.setItem('albionCalc', JSON.stringify(S)); } catch {} };
+const load = obj => { S = { ...structuredClone(DEFAULTS), ...obj, craftCity: { ...CRAFT_CITY, ...obj?.craftCity } }; };
+try { load(JSON.parse(localStorage.getItem('albionCalc') || '{}')); } catch {}
 
-let P = {};  // "item|city" -> API row
+let D = { gear: [], ref: {} };  // data.json
+let P = {};  // "item|city|quality" -> API row
 let O = {};  // "item|city|field" -> manual override
+let statusMsg = '';
 
-const itemId = (t, e, kind) => `T${t}_${kind}` + (e ? `_LEVEL${e}@${e}` : '');
-const prevId = (t, e) => t === 4 ? `T3_${MATS[S.mat].out}` : itemId(t - 1, e, MATS[S.mat].out);
-const refineCity = () => S.refineCity || MATS[S.mat].bonus;
-const buyCity = () => S.buyCity || refineCity();
-const sellCity = () => S.sellCity || refineCity();
+// ---------- sync ----------
+let syncCode = '';
+try { syncCode = localStorage.getItem('albionSync') || ''; } catch {}
+const hashCode = new URLSearchParams(location.hash.slice(1)).get('sync');
+if (hashCode) { syncCode = hashCode; history.replaceState(null, '', location.pathname); }
+let syncTimer, syncMsg = '';
+
+function save() {
+  try { localStorage.setItem('albionCalc', JSON.stringify(S)); } catch {}
+  if (!syncCode) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(push, 1500);  // debounced: KV free tier allows 1000 writes/day
+}
+async function push() {
+  try {
+    const r = await fetch(SYNC_API + syncCode, { method: 'PUT', body: JSON.stringify(S) });
+    syncMsg = r.ok ? 'synced ' + new Date().toLocaleTimeString() : 'sync failed (HTTP ' + r.status + ')';
+  } catch { syncMsg = 'sync failed (offline?)'; }
+  renderSync();
+}
+async function pull() {
+  try {
+    const r = await fetch(SYNC_API + syncCode);
+    if (!r.ok) throw new Error(r.status);
+    const remote = await r.json();
+    if (remote) load(remote); else await push();  // fresh code: upload this device's settings
+    syncMsg = 'loaded from cloud';
+  } catch { syncMsg = 'could not reach sync server, using this device\'s settings'; }
+}
+function setCode(code) {
+  syncCode = code;
+  try { code ? localStorage.setItem('albionSync', code) : localStorage.removeItem('albionSync'); } catch {}
+}
+function renderSync() {
+  const el = document.getElementById('sync');
+  if (!syncCode) {
+    el.innerHTML = `<p class="hint">Turn this on to keep specs and settings the same on every device. Then open the sync link once on each phone or laptop.</p>
+      <div class="row"><button id="syncOn">Turn on sync</button>
+      <label>Or paste a sync link/code<input id="syncIn" style="width:260px"></label><button class="ghost" id="syncJoin">Connect</button></div>`;
+    el.querySelector('#syncOn').onclick = async () => { setCode(crypto.randomUUID().replaceAll('-', '')); await push(); };
+    el.querySelector('#syncJoin').onclick = async () => {
+      const v = el.querySelector('#syncIn').value.trim(), code = (v.match(/sync=([\w-]+)/) || [, v])[1];
+      if (!/^[\w-]{20,64}$/.test(code)) return alert('That doesn\'t look like a sync code');
+      setCode(code); await pull(); bind(); renderAll();
+    };
+    return;
+  }
+  setCode(syncCode);
+  const link = `${location.origin}${location.pathname}#sync=${syncCode}`;
+  el.innerHTML = `<p class="hint">Open this link once on another device. Keep it private: anyone with it can change your settings.</p>
+    <p><code>${link}</code></p>
+    <div class="row"><button id="syncCopy">Copy link</button><button class="ghost" id="syncOff">Turn off on this device</button></div>
+    <p class="hint">${syncMsg}</p>`;
+  el.querySelector('#syncCopy').onclick = () => navigator.clipboard.writeText(link).then(() => { syncMsg = 'link copied'; renderSync(); });
+  el.querySelector('#syncOff').onclick = () => { setCode(''); syncMsg = ''; renderSync(); };
+}
+
+// ---------- shared ----------
 const tax = () => S.premium ? S.taxPrem : S.taxNoPrem;
 const rrr = bonus => 1 - 1 / (1 + bonus / 100);
-const returnRate = focus => rrr(S.baseBonus + (refineCity() === MATS[S.mat].bonus ? S.cityBonus : 0) + (focus ? S.focusBonus : 0) + S.dailyBonus);
+const buyMult = () => S.buyMode === 'order' ? 1 + S.setup / 100 : 1;
+const sellMult = () => 1 - tax() / 100 - (S.sellMode === 'order' ? S.setup / 100 : 0);
+const stationFee = value => value * S.nutrition * S.stationFee / 100;
+const focusMult = fce => 0.5 ** (fce / 10000);
 
-// ponytail: approximate item values (raw = 2^tier × 2^enchant). Calibrate with the nutrition factor
-const rawVal = (t, e) => 2 ** t * 2 ** e;
-const refVal = (t, e) => t === 3 ? 20 : RAW_COUNT[t] * rawVal(t, e) + refVal(t - 1, t === 4 ? 0 : e);
-
-function price(item, city, side) {
+function price(item, city, side, q = 1) {
   // buying: instant = lowest sell order, order = highest buy order. Selling is the reverse
   const field = (side === 'buy') === (S[side + 'Mode'] === 'instant') ? 'sell_price_min' : 'buy_price_max';
-  const key = `${item}|${city}|${field}`, row = P[`${item}|${city}`];
-  const d = row && row[field] ? new Date(row[field + '_date'] + 'Z') : null;
-  return { key, v: key in O ? O[key] : (row?.[field] || 0), d: key in O ? new Date() : d };
+  const key = `${item}|${city}|${field}`, row = P[`${item}|${city}|${q}`];
+  if (q === 1 && key in O) return { key, v: O[key], d: new Date() };
+  return { key, v: row?.[field] || 0, d: row?.[field] ? new Date(row[field + '_date'] + 'Z') : null };
 }
-
-function calc(t, e, focus) {
-  const m = MATS[S.mat], n = RAW_COUNT[t];
-  const raw = price(itemId(t, e, m.raw), buyCity(), 'buy');
-  const prev = price(prevId(t, e), buyCity(), 'buy');
-  const out = price(itemId(t, e, m.out), sellCity(), 'sell');
-  const r = returnRate(focus);
-  const buyMult = S.buyMode === 'order' ? 1 + S.setup / 100 : 1;
-  const sellMult = 1 - tax() / 100 - (S.sellMode === 'order' ? S.setup / 100 : 0);
-  const cost = (n * raw.v + prev.v) * buyMult * (1 - r);  // returned mats valued at buy price
-  const fee = refVal(t, e) * S.nutrition * S.stationFee / 100;
-  const profit = out.v * sellMult - cost - fee;
-  return { t, e, n, r, raw, prev, out, cost, fee, profit, ok: raw.v && prev.v && out.v };
-}
-
-const focusCost = t => {
-  const base = S.baseFocus[S.mat][t];
-  return base === '' ? null : base * 0.5 ** (S.spec[S.mat][t] * S.fcePerLevel / 10000);
-};
 
 const fmt = x => Math.round(x).toLocaleString();
 const cls = x => x >= 0 ? 'pos' : 'neg';
@@ -157,96 +253,194 @@ const ageText = ds => {
   const h = (Date.now() - Math.min(...d)) / 36e5;
   return `<span class="${h > 24 ? 'neg' : 'dim'}">${h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd'}</span>`;
 };
-const cell = p => `<td><input type="number" data-o="${p.key}" value="${p.v || ''}" placeholder="—"></td>`;
+const priceInput = (p, title = '') => `<input type="number" data-o="${p.key}" value="${p.v || ''}" placeholder="—" title="${title}">`;
+const icon = id => `<img src="https://render.albiononline.com/v1/item/${id}.png?size=56" alt="" loading="lazy">`;
+const profitCells = (profit, spend, qty) =>
+  `<td class="${cls(profit)}">${fmt(profit)}</td><td class="${cls(profit)}">${(100 * profit / spend).toFixed(1)}%</td><td class="${cls(profit)}">${fmt(profit * qty)}</td>`;
 
-function render() {
-  const rows = TIERS.flatMap(t => ENCH.map(e => calc(t, e, S.useFocus)))
-    .sort((a, b) => (b.ok - a.ok) || (b.profit - a.profit));
-  const m = MATS[S.mat];
-  document.getElementById('tbl').innerHTML =
-    `<tr><th>Item</th><th>Raw</th><th>Prev</th><th>Sell</th><th>Cost/craft</th><th>Fee</th><th>Profit/craft</th><th>Margin</th><th>×${S.qty}</th><th>Buy for ×${S.qty}</th>${S.useFocus ? '<th>Silver/focus</th>' : ''}<th>Age</th></tr>` +
-    rows.map(c => {
-      const id = itemId(c.t, c.e, m.out), q = S.qty, spend = c.cost + c.fee;
-      let spf = '';
-      if (S.useFocus) {
-        const fc = focusCost(c.t);
-        spf = `<td>${fc && c.ok ? ((c.profit - calc(c.t, c.e, false).profit) / fc).toFixed(1) : '—'}</td>`;
-      }
-      return `<tr><td><img src="https://render.albiononline.com/v1/item/${id}.png?size=56" alt="" loading="lazy">T${c.t}.${c.e}</td>` +
-        cell(c.raw) + cell(c.prev) + cell(c.out) +
-        (c.ok
-          ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td><td class="${cls(c.profit)}">${fmt(c.profit)}</td><td class="${cls(c.profit)}">${(100 * c.profit / spend).toFixed(1)}%</td><td class="${cls(c.profit)}">${fmt(c.profit * q)}</td>`
-          : '<td colspan="5" class="dim">missing price</td>') +
-        `<td class="dim">${Math.ceil(q * c.n * (1 - c.r))} raw + ${Math.ceil(q * (1 - c.r))} T${c.t - 1}</td>${spf}<td>${ageText([c.raw.d, c.prev.d, c.out.d])}</td></tr>`;
-    }).join('');
-  document.getElementById('status').textContent =
-    `Return rate ${(100 * returnRate(S.useFocus)).toFixed(1)}% · refine in ${refineCity()} · buy in ${buyCity()} · sell in ${sellCity()} · tax ${tax()}%` + (statusMsg ? ' · ' + statusMsg : '');
+// ---------- refining ----------
+const itemId = (t, e, kind) => `T${t}_${kind}` + (e ? `_LEVEL${e}@${e}` : '');
+const prevId = (t, e) => t === 4 ? `T3_${MATS[S.mat].out}` : itemId(t - 1, e, MATS[S.mat].out);
+const refineCity = () => S.refineCity || MATS[S.mat].bonus;
+const buyCity = () => S.buyCity || refineCity();
+const sellCity = () => S.sellCity || refineCity();
+const refineRate = focus => rrr(S.baseBonus + (refineCity() === MATS[S.mat].bonus ? S.cityBonus : 0) + (focus ? S.focusBonus : 0) + S.dailyBonus);
+const refineFocus = (t, e) => D.ref[MATS[S.mat].out][t][e][0] * focusMult(S.spec[S.mat][t] * S.fcePerLevel);
+
+function calcRefine(t, e, focus) {
+  const m = MATS[S.mat], n = RAW_COUNT[t];
+  const raw = price(itemId(t, e, m.raw), buyCity(), 'buy');
+  const prev = price(prevId(t, e), buyCity(), 'buy');
+  const out = price(itemId(t, e, m.out), sellCity(), 'sell');
+  const r = refineRate(focus);
+  const cost = (n * raw.v + prev.v) * buyMult() * (1 - r);  // returned mats valued at buy price
+  const fee = stationFee(D.ref[m.out][t][e][1]);
+  return { t, e, n, r, raw, prev, out, cost, fee, profit: out.v * sellMult() - cost - fee, ok: raw.v && prev.v && out.v };
 }
 
-function renderSpec() {
+function renderRefine() {
+  const rows = TIERS.flatMap(t => ENCH.map(e => calcRefine(t, e, S.useFocus)))
+    .sort((a, b) => (b.ok - a.ok) || (b.profit - a.profit));
+  const q = S.qty;
+  document.getElementById('tbl').innerHTML =
+    `<tr><th>Item</th><th>Raw</th><th>Prev</th><th>Sell</th><th>Cost/craft</th><th>Fee</th><th>Profit/craft</th><th>Margin</th><th>×${q}</th><th>Buy for ×${q}</th><th>Focus</th>${S.useFocus ? '<th>Silver/focus</th>' : ''}<th>Age</th></tr>` +
+    rows.map(c => {
+      const fc = refineFocus(c.t, c.e);
+      const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcRefine(c.t, c.e, false).profit) / fc).toFixed(1) : '—'}</td>` : '';
+      return `<tr><td>${icon(itemId(c.t, c.e, MATS[S.mat].out))}T${c.t}.${c.e}</td>` +
+        `<td>${priceInput(c.raw)}</td><td>${priceInput(c.prev)}</td><td>${priceInput(c.out)}</td>` +
+        (c.ok ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td>` + profitCells(c.profit, c.cost + c.fee, q) : '<td colspan="5" class="dim">missing price</td>') +
+        `<td class="dim">${Math.ceil(q * c.n * (1 - c.r))} raw + ${Math.ceil(q * (1 - c.r))} T${c.t - 1}</td><td class="dim">${fmt(fc)}</td>${spf}<td>${ageText([c.raw.d, c.prev.d, c.out.d])}</td></tr>`;
+    }).join('');
   document.getElementById('spec').innerHTML = '<tr><th></th>' + TIERS.map(t => `<th>T${t}</th>`).join('') + '</tr>' +
     ['leather', 'cloth'].map(mat =>
-      `<tr><td>${mat} spec</td>` + TIERS.map(t => `<td><input type="number" min="0" max="100" data-k="spec.${mat}.${t}"></td>`).join('') + '</tr>' +
-      `<tr><td>${mat} base focus</td>` + TIERS.map(t => `<td><input type="number" min="0" data-k="baseFocus.${mat}.${t}"></td>`).join('') + '</tr>' +
-      `<tr><td class="dim">focus cost ×</td>` + TIERS.map(t => `<td class="dim">${(0.5 ** (S.spec[mat][t] * S.fcePerLevel / 10000)).toFixed(2)}</td>`).join('') + '</tr>'
+      `<tr><td>${mat}</td>` + TIERS.map(t => `<td><input type="number" class="spec" min="0" max="100" data-k="spec.${mat}.${t}"></td>`).join('') + '</tr>' +
+      `<tr><td class="dim">focus cost ×</td>` + TIERS.map(t => `<td class="dim">${focusMult(S.spec[mat][t] * S.fcePerLevel).toFixed(2)}</td>`).join('') + '</tr>'
     ).join('');
+  return `Return rate ${(100 * refineRate(S.useFocus)).toFixed(1)}% · refine in ${refineCity()} · buy in ${buyCity()} · sell in ${sellCity()}`;
+}
+
+// ---------- crafting ----------
+const gearId = (g, t, e) => `T${t}_${g.id}` + (e ? `@${e}` : '');
+const resId = (tmpl, e) => tmpl.replace('{e}', e ? `_LEVEL${e}@${e}` : '').replace('{ae}', e ? `@${e}` : '');
+const craftCity = g => S.cCity || S.craftCity[g.cc] || 'Caerleon';
+const craftRate = (g, focus) => rrr(S.baseBonus + (S.craftCity[g.cc] === craftCity(g) ? S.craftBonus : 0) + (focus ? S.focusBonus : 0) + S.dailyBonus);
+const spec = g => S.craftSpec[g.id] || 0;
+const craftFocus = (g, t, e) => {
+  const tree = D.gear.filter(x => x.cc === g.cc && x.id !== g.id).reduce((a, x) => a + spec(x), 0);
+  return g.f[t][e] * focusMult(spec(g) * S.fceItem + tree * S.fceTree);
+};
+const catGear = () => D.gear.filter(g => g.c === S.cCat);
+const craftRows = () => catGear().flatMap(g => g.t.flatMap(t => ENCH.map(e => ({ g, t, e }))))
+  .filter(({ g, t, e }) => (S.cTier === '0' || +S.cTier === t) && (S.cEnch === '-1' || +S.cEnch === e) && g.f[t][e] !== null);
+
+function calcCraft({ g, t, e }, focus) {
+  const city = craftCity(g), bc = S.cBuyCity || city, sc = S.cSellCity || city, r = craftRate(g, focus);
+  const mats = g.r[t].map(([tmpl, n, ret]) => ({ p: price(resId(tmpl, e), bc, 'buy'), n, ret, id: resId(tmpl, e) }));
+  const cost = mats.reduce((a, m) => a + m.p.v * m.n * (m.ret ? 1 - r : 1), 0) * buyMult();
+  const id = gearId(g, t, e), sell = price(id, sc, 'sell');
+  let best = 0, ev = 0;
+  S.odds.forEach((pct, i) => { best = price(id, sc, 'sell', i + 1).v || best; ev += pct / 100 * best; });
+  const fee = stationFee(g.v[t][e]);
+  const ok = mats.every(m => m.p.v) && sell.v;
+  const revenue = (sell.key in O ? sell.v : ev) * sellMult();
+  return { g, t, e, r, mats, sell, cost, fee, ok, profit: revenue - cost - fee, city };
+}
+
+function renderCraft() {
+  const rows = craftRows().map(x => calcCraft(x, S.useFocus)).sort((a, b) => (b.ok - a.ok) || (b.profit - a.profit));
+  const q = S.qty;
+  document.getElementById('ctbl').innerHTML =
+    `<tr><th>Item</th><th>Spec</th><th>Materials (price each)</th><th>Sell</th><th>Cost/craft</th><th>Fee</th><th>Profit/craft</th><th>Margin</th><th>×${q}</th><th>Focus</th>${S.useFocus ? '<th>Silver/focus</th>' : ''}<th>Age</th></tr>` +
+    rows.map(c => {
+      const fc = craftFocus(c.g, c.t, c.e);
+      const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcCraft(c, false).profit) / fc).toFixed(1) : '—'}</td>` : '';
+      const mats = c.mats.map(m => `<span title="${m.n}× ${m.id}">${m.n}×${priceInput(m.p, m.id)}</span>`).join('');
+      return `<tr><td>${icon(gearId(c.g, c.t, c.e))}${c.g.n} <span class="dim">T${c.t}.${c.e}</span></td>` +
+        `<td><input type="number" class="spec" min="0" max="120" data-spec="${c.g.id}" value="${spec(c.g)}"></td>` +
+        `<td><div class="mats">${mats}</div></td><td>${priceInput(c.sell)}</td>` +
+        (c.ok ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td>` + profitCells(c.profit, c.cost + c.fee, q) : '<td colspan="5" class="dim">missing price</td>') +
+        `<td class="dim">${fmt(fc)}</td>${spf}<td>${ageText([...c.mats.map(m => m.p.d), c.sell.d])}</td></tr>`;
+    }).join('') || '<tr><td class="dim">Nothing craftable for this filter</td></tr>';
+  const g = catGear()[0];
+  return g ? `Return rate ${(100 * craftRate(g, S.useFocus)).toFixed(1)}% · craft in ${craftCity(g)} · sell in ${S.cSellCity || craftCity(g)}` : '';
+}
+
+// ---------- prices ----------
+async function fetchPrices(ids, qualities, cities) {
+  const list = [...ids];
+  for (let i = 0; i < list.length; i += 60) {  // keep URLs short
+    const url = `${API}${list.slice(i, i + 60).join(',')}.json?qualities=${qualities}&locations=${encodeURIComponent(cities.join(','))}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    for (const r of await res.json()) P[`${r.item_id}|${r.city}|${r.quality}`] = r;
+  }
+}
+async function refresh(clearOverrides) {
+  if (clearOverrides) O = {};
+  statusMsg = 'loading prices…'; renderAll();
+  try {
+    if (S.tab === 'craft') {
+      const rows = craftRows(), mats = new Set();
+      rows.forEach(({ g, t, e }) => g.r[t].forEach(([tmpl]) => mats.add(resId(tmpl, e))));
+      await fetchPrices(mats, '1', CITIES);
+      await fetchPrices(new Set(rows.map(({ g, t, e }) => gearId(g, t, e))), '1,2,3,4,5', [...CITIES, 'Black Market']);
+    } else {
+      const ids = new Set();
+      for (const m of Object.values(MATS)) {
+        ids.add(`T3_${m.out}`);
+        for (const t of TIERS) for (const e of ENCH) { ids.add(itemId(t, e, m.raw)); ids.add(itemId(t, e, m.out)); }
+      }
+      await fetchPrices(ids, '1', CITIES);
+    }
+    statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    statusMsg = 'price fetch failed (' + err.message + '). Type prices in manually';
+  }
+  renderAll();
+}
+
+// ---------- UI wiring ----------
+function renderAll() {
+  document.querySelectorAll('[data-page]').forEach(p => p.hidden = p.dataset.page !== S.tab);
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
+  const info = S.tab === 'craft' ? renderCraft() : S.tab === 'refine' ? renderRefine() : '';
+  document.getElementById('status').textContent = [info, `tax ${tax()}%`, statusMsg].filter(Boolean).join(' · ');
+  renderSync();
   bind();
 }
 
 const getK = p => p.split('.').reduce((a, k) => a[k], S);
 const setK = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((a, k) => a[k], S)[last] = v; };
+const REFETCH = ['cCat', 'cTier', 'cEnch', 'cBuyCity', 'cSellCity', 'cCity'];
 function bind() {
   document.querySelectorAll('[data-k]').forEach(el => {
     const v = getK(el.dataset.k);
     if (el.type === 'checkbox') el.checked = v; else el.value = v;
     el.onchange = () => {
-      setK(el.dataset.k, el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? '' : +el.value) : el.value);
+      setK(el.dataset.k, el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value);
       save();
-      if (el.closest('#spec') || el.dataset.k === 'fcePerLevel') renderSpec();
-      render();
+      REFETCH.includes(el.dataset.k) ? refresh() : renderAll();
     };
   });
 }
 
-document.getElementById('tbl').addEventListener('change', ev => {
-  const k = ev.target.dataset.o;
-  if (!k) return;
-  if (ev.target.value === '') delete O[k]; else O[k] = +ev.target.value;
-  render();
+document.addEventListener('change', ev => {
+  const { o, spec: id } = ev.target.dataset;
+  if (o) { if (ev.target.value === '') delete O[o]; else O[o] = +ev.target.value; renderAll(); }
+  if (id) { S.craftSpec[id] = +ev.target.value || 0; save(); renderAll(); }
 });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; save(); S.tab === 'settings' ? renderAll() : refresh(); });
+document.getElementById('refresh').onclick = () => refresh(true);
 
-let statusMsg = '';
-async function refresh() {
-  const ids = new Set();
-  for (const m of Object.values(MATS)) {
-    ids.add(`T3_${m.out}`);
-    for (const t of TIERS) for (const e of ENCH) { ids.add(itemId(t, e, m.raw)); ids.add(itemId(t, e, m.out)); }
-  }
-  statusMsg = 'loading prices…'; render();
-  try {
-    const res = await fetch(`${API}${[...ids].join(',')}.json?qualities=1&locations=${encodeURIComponent(CITIES.join(','))}`);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    P = {}; O = {};
-    for (const r of await res.json()) P[`${r.item_id}|${r.city}`] = r;
-    statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
-  } catch (err) {
-    statusMsg = 'price fetch failed (' + err.message + '). Type prices in manually';
-  }
-  render();
+function buildStaticUI() {
+  document.querySelectorAll('select.cities').forEach(s => s.insertAdjacentHTML('beforeend', CITIES.map(c => `<option>${c}</option>`).join('')));
+  document.querySelector('select.bm').insertAdjacentHTML('beforeend', '<option>Black Market</option>');
+  const groups = {};
+  D.gear.forEach(g => (groups[g.g] ??= new Set()).add(g.c));
+  document.getElementById('cats').innerHTML = Object.entries(groups).map(([grp, cs]) =>
+    `<optgroup label="${grp}">${[...cs].sort().map(c => `<option value="${c}">${c.replace(/^accessoires_capes_/, 'cape: ').replace(/_/g, ' ')}</option>`).join('')}</optgroup>`).join('');
+  document.getElementById('odds').innerHTML = QUALITIES.map((q, i) => `<label>${q}<input type="number" step="0.1" data-k="odds.${i}"></label>`).join('');
+  document.getElementById('ccity').innerHTML = [...new Set(D.gear.map(g => g.cc))].sort().map(cc =>
+    `<label>${cc.replace(/_/g, ' ')}<select data-k="craftCity.${cc}"><option value="">none</option>${CITIES.map(c => `<option>${c}</option>`).join('')}</select></label>`).join('');
+  S.craftCity = Object.fromEntries([...new Set(D.gear.map(g => g.cc))].map(cc => [cc, S.craftCity[cc] || '']));
 }
 
 function selfTest() {
   const near = (a, b) => Math.abs(a - b) < 0.001;
-  console.assert(near(rrr(18), 0.1525) && near(rrr(58), 0.3671) && near(rrr(117), 0.5392), 'return rate formula');
-  console.assert(refVal(4, 0) === 2 * 16 + 20 && refVal(5, 1) === 3 * 64 + refVal(4, 1), 'item value chain');
-  console.assert(itemId(5, 2, 'HIDE') === 'T5_HIDE_LEVEL2@2' && itemId(4, 0, 'CLOTH') === 'T4_CLOTH', 'item ids');
+  console.assert(near(rrr(18), 0.1525) && near(rrr(58), 0.3671) && near(rrr(33), 0.2481), 'return rate formula');
+  console.assert(resId('T5_METALBAR{e}', 2) === 'T5_METALBAR_LEVEL2@2' && resId('T5_CAPE{ae}', 1) === 'T5_CAPE@1' && resId('T5_METALBAR{e}', 0) === 'T5_METALBAR', 'recipe ids');
+  console.assert(itemId(5, 2, 'HIDE') === 'T5_HIDE_LEVEL2@2' && near(focusMult(10000), 0.5), 'item ids / focus');
 }
 
-document.querySelectorAll('select.cities').forEach(s => s.insertAdjacentHTML('beforeend', CITIES.map(c => `<option>${c}</option>`).join('')));
-document.getElementById('refresh').onclick = refresh;
-selfTest();
-renderSpec();
-refresh();
+(async () => {
+  selfTest();
+  D = await (await fetch('data.json')).json();
+  if (syncCode) await pull();
+  buildStaticUI();
+  renderAll();
+  if (S.tab !== 'settings') refresh();
+})();
 </script>
 </body>
 </html>
