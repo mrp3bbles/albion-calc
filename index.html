@@ -76,6 +76,12 @@ tr.got td{color:var(--dim)}tr.got td:nth-child(2){text-decoration:line-through}
 .counter button{width:38px;height:38px;border-radius:50%;font-size:20px;padding:0}
 .counter b{font-size:22px;min-width:36px;display:inline-block}
 .pop{animation:pop .25s ease}
+.card.today{display:flex;flex-direction:column;gap:3px;animation:slidein .4s cubic-bezier(.2,.8,.2,1) both}
+.card.today img{width:44px;height:44px}
+.card.today small{display:block}
+.card.today button{margin-top:auto}
+.fees td{padding:2px 6px}
+.foods{display:flex;flex-wrap:wrap;gap:6px}
 .checks li{margin:4px 0}
 .done{text-align:center}
 .trophy{font-size:56px;animation:bounce 1s ease}
@@ -147,6 +153,13 @@ tr.got td{color:var(--dim)}tr.got td:nth-child(2){text-decoration:line-through}
       <label>Sell in<select data-k="cSellCity" class="cities bm"><option value="">Same as craft</option></select></label>
     </div>
   </section>
+  <section>
+    <div class="row" style="justify-content:space-between">
+      <button id="todayBtn">✨ What can I craft today?</button>
+      <span class="hint">Checks every item at the tier &amp; enchant picked above (or all of them), against real sales volume.</span>
+    </div>
+    <div id="today" hidden></div>
+  </section>
   <section class="wrap"><table id="ctbl"></table>
     <p class="hint">Spec is per item and saved. It lowers focus cost; set quality odds in Settings if you want it to count toward sell value. Artifacts and tokens are never returned. Material prices are editable.</p>
   </section>
@@ -194,10 +207,12 @@ tr.got td{color:var(--dim)}tr.got td:nth-child(2){text-decoration:line-through}
       <li><b>Daily bonuses.</b> When the game shows a +10% or +20% refining or crafting bonus, enter it under Settings → Daily bonus. It noticeably raises your return rate.</li>
       <li><b>Don't flood the market.</b> Selling 500 of something that sells 100 a day crashes the price. The planner caps each item at a share of daily sales; spread big batches across days or cities.</li>
       <li><b>Check for spikes before you commit.</b> Tap any item's icon to see 30 days of prices. If today is a spike, the profit won't last until your sell orders fill.</li>
+      <li><b>Eat a salad before crafting.</b> Bean / Turnip / Potato Salad give +33 / +66 / +99 crafting quality and craft faster. Add one from a craft session's shopping step.</li>
       <li><b>Journals are extra profit.</b> Fill a crafting journal while you craft and sell it full. Add journals in a craft session and they count toward profit.</li>
     </ul>
     <h3>Keep the numbers honest</h3>
     <ul>
+      <li><b>Start the Albion Data Client first, then Albion.</b> It only uploads markets you open while it's running, so launching it first means nothing gets missed.</li>
       <li><b>Keep the Albion Data Client running</b> while you play. Every market you open gets uploaded, so the cities you trade in get fresh prices, for everyone.</li>
       <li><b>Watch the Age column.</b> Red or "no data" means a guess. Open that market in-game (the data client uploads it), hit Refresh, or type the price into the cell.</li>
       <li><b>Max price age</b> (top bar) hides stale prices, so scans don't chase a week-old listing.</li>
@@ -213,7 +228,7 @@ tr.got td{color:var(--dim)}tr.got td:nth-child(2){text-decoration:line-through}
     <h3>Safety</h3>
     <ul>
       <li>Don't carry more through red or black zones than you can afford to lose. Black Market flips end in Caerleon, so they carry that risk.</li>
-      <li>Your sync link works like a password: anyone who has it can edit your settings and log.</li>
+      <li>Your sync link works like a password: anyone who has it can edit your settings and log. A username and password is easier to type on a new phone.</li>
     </ul>
     <h3>Use it like an app</h3>
     <ul>
@@ -306,7 +321,7 @@ const DEFAULTS = {
   budget: 1000000, planShare: 20, shopAround: false,
   sort: { refine: { k: 'item', d: 1 }, craft: { k: 'profit', d: -1 }, flip: { k: 'profit', d: -1 } },
   fTier: '4', fEnch: '0', fQual: '0', fBuy: '',
-  log: [], session: null,
+  log: [], session: null, history: {},
   rShow: { 4: true, 5: true, 6: true, 7: true, 8: true },
   craftCity: CRAFT_CITY,
   spec: { leather: { 4: 24, 5: 14, 6: 3, 7: 0, 8: 0 }, cloth: { 4: 23, 5: 14, 6: 1, 7: 0, 8: 0 } },
@@ -355,12 +370,52 @@ function setCode(code) {
   syncCode = code;
   try { code ? localStorage.setItem('albionSync', code) : localStorage.removeItem('albionSync'); } catch {}
 }
+// Accounts: the password is stretched with PBKDF2 here in the browser; the server only ever sees the result,
+// stores a salted hash of it, and hands back the account's sync code.
+let syncUser = '', typedUser = '';
+try { syncUser = localStorage.getItem('albionUser') || ''; } catch {}
+const setUser = u => { syncUser = u; try { u ? localStorage.setItem('albionUser', u) : localStorage.removeItem('albionUser'); } catch {} };
+async function deriveKey(user, pass) {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode('albion-calc:' + user), iterations: 200000 }, base, 256);
+  return [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function account(kind, user, pass) {
+  const res = await fetch(SYNC_API + 'account/' + kind, { method: 'POST', body: JSON.stringify({ user, key: await deriveKey(user, pass), code: syncCode }) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || 'HTTP ' + res.status);
+  return body.code;
+}
+async function accountSubmit(kind) {
+  const user = typedUser = document.getElementById('accUser').value.trim().toLowerCase(), pass = document.getElementById('accPass').value;
+  if (!/^[a-z0-9_]{3,24}$/.test(user)) { syncMsg = 'Username: 3–24 letters, numbers or _'; return renderSync(); }
+  if (pass.length < 6) { syncMsg = 'Password: at least 6 characters'; return renderSync(); }
+  syncMsg = kind === 'login' ? 'Logging in…' : 'Creating account…'; renderSync();
+  try {
+    const code = await account(kind, user, pass);
+    setCode(code); setUser(user);
+    await pull();  // login: load your settings. New account: nothing there yet, so this device's settings are uploaded
+    syncMsg = kind === 'login' ? `Welcome back, ${user}` : `Account created. Log in as ${user} on your other devices`;
+    bind(); renderAll();
+  } catch (err) { syncMsg = err.message; renderSync(); }
+}
 function renderSync() {
   const el = document.getElementById('sync');
+  const link = syncCode && `${location.origin}${location.pathname}#sync=${syncCode}`;
+  const form = (title, buttons) => `<p class="hint">${title}</p>
+    <div class="row"><label>Username<input id="accUser" autocomplete="username" autocapitalize="none" style="width:160px" value="${esc(syncUser || typedUser)}"></label>
+      <label>Password<input id="accPass" type="password" autocomplete="current-password" style="width:160px"></label>${buttons}</div>`;
   if (!syncCode) {
-    el.innerHTML = `<p class="hint">Turn this on to keep specs and settings the same on every device. Then open the sync link once on each phone or laptop.</p>
-      <div class="row"><button id="syncOn">Turn on sync</button>
-      <label>Or paste a sync link/code<input id="syncIn" style="width:260px"></label><button class="ghost" id="syncJoin">Connect</button></div>`;
+    el.innerHTML = form('Log in to get your specs, settings, run log and craft sessions on every device.',
+      `<button id="accLogin">Log in</button><button class="ghost" id="accRegister">Create account</button>`) +
+      `<p class="hint">${esc(syncMsg)}</p>
+      <details><summary class="hint">Use a sync link instead</summary>
+        <div class="row" style="margin-top:6px"><button class="ghost" id="syncOn">Make a sync link</button>
+        <label>Or paste a sync link/code<input id="syncIn" style="width:260px"></label><button class="ghost" id="syncJoin">Connect</button></div>
+      </details>`;
+    el.querySelector('#accLogin').onclick = () => accountSubmit('login');
+    el.querySelector('#accRegister').onclick = () => accountSubmit('register');
     el.querySelector('#syncOn').onclick = async () => { setCode(crypto.randomUUID().replaceAll('-', '')); await push(); };
     el.querySelector('#syncJoin').onclick = async () => {
       const v = el.querySelector('#syncIn').value.trim(), code = (v.match(/sync=([\w-]+)/) || [, v])[1];
@@ -369,14 +424,18 @@ function renderSync() {
     };
     return;
   }
-  setCode(syncCode);
-  const link = `${location.origin}${location.pathname}#sync=${syncCode}`;
-  el.innerHTML = `<p class="hint">Open this link once on another device. Keep it private: anyone with it can change your settings.</p>
-    <p><code>${link}</code></p>
-    <div class="row"><button id="syncCopy">Copy link</button><button class="ghost" id="syncOff">Turn off on this device</button></div>
-    <p class="hint">${syncMsg}</p>`;
+  setCode(syncCode);  // remembers a code that arrived via a #sync= link
+  el.innerHTML = (syncUser
+    ? `<p>Signed in as <b>${esc(syncUser)}</b>. Everything syncs automatically.</p>`
+    : form('Syncing with a link. Add a username and password so new devices can just log in:', '<button id="accRegister">Add login</button>')) +
+    `<p class="hint">${esc(syncMsg)}</p>
+    <div class="row"><button class="ghost" id="syncOff">Log out on this device</button></div>
+    <details><summary class="hint">Sync link (backup if you forget your password)</summary>
+      <p><code>${link}</code></p><button class="ghost sm" id="syncCopy">Copy link</button>
+    </details>`;
+  el.querySelector('#accRegister')?.addEventListener('click', () => accountSubmit('register'));
   el.querySelector('#syncCopy').onclick = () => navigator.clipboard.writeText(link).then(() => { syncMsg = 'link copied'; renderSync(); });
-  el.querySelector('#syncOff').onclick = () => { setCode(''); syncMsg = ''; renderSync(); };
+  el.querySelector('#syncOff').onclick = () => { setCode(''); setUser(''); syncMsg = 'Logged out. Your data stays on this device too.'; renderSync(); };
 }
 
 // ---------- shared ----------
@@ -617,6 +676,17 @@ async function fetchPrices(ids, qualities, cities, label) {
   }
 }
 const setStatus = msg => document.getElementById('status').textContent = msg;
+async function fetchCraftPrices(rows, normalOnly) {
+  const mats = new Set(), gear = new Set(), buyAt = new Set(), sellAt = new Set();
+  rows.forEach(({ g, t, e }) => {
+    const city = craftCity(g);
+    buyAt.add(S.cBuyCity || city); sellAt.add(S.cSellCity || city); gear.add(gearId(g, t, e));
+    g.r[t].forEach(([tmpl]) => mats.add(resId(tmpl, e)));
+  });
+  await fetchPrices(mats, '1', buyAt, 'materials');
+  // big scans: Normal quality only, otherwise the response is huge
+  await fetchPrices(gear, normalOnly ? '1' : '1,2,3,4,5', sellAt, 'gear');
+}
 function refineIds() {
   const ids = new Set();
   for (const m of Object.values(MATS)) {
@@ -633,15 +703,7 @@ async function refresh(clearOverrides) {
   statusMsg = 'loading prices…'; renderAll();
   try {
     if (S.tab === 'craft') {
-      const rows = craftRows(), mats = new Set(), gear = new Set(), buyAt = new Set(), sellAt = new Set();
-      rows.forEach(({ g, t, e }) => {
-        const city = craftCity(g);
-        buyAt.add(S.cBuyCity || city); sellAt.add(S.cSellCity || city); gear.add(gearId(g, t, e));
-        g.r[t].forEach(([tmpl]) => mats.add(resId(tmpl, e)));
-      });
-      await fetchPrices(mats, '1', buyAt, 'materials');
-      // scan: Normal quality only, otherwise the response is huge
-      await fetchPrices(gear, S.cCat === SCAN ? '1' : '1,2,3,4,5', sellAt, 'gear');
+      await fetchCraftPrices(craftRows(), S.cCat === SCAN);
     } else {
       await fetchPrices(refineIds(), '1', CITIES);
     }
@@ -814,7 +876,24 @@ const sRate = s => rrr(S.baseBonus + (S.craftCity[sg().cc] === sCity(s) ? S.craf
 const jId = (s, kind) => `T${s.t}_JOURNAL_${journalType(sg())}_${kind}`;
 // journals trade thinly: fall back to the best price in any city
 const anyCity = (id, side) => { const v = CITIES.map(c => price(id, c, side).v).filter(Boolean); return v.length ? (side === 'buy' ? Math.min(...v) : Math.max(...v)) : 0; };
-const sSpent = s => s.shop.reduce((a, x) => a + x.need * x.price, 0) + (+s.fee || 0);
+// station fees: what you logged, or the estimate until you log one
+const sFee = s => s.fees?.length ? s.fees.reduce((a, f) => a + f.amount, 0) : +s.fee || 0;
+const sSpent = s => s.shop.reduce((a, x) => a + x.need * x.price, 0) + sFee(s);
+// crafting food, buff values from the game files (craftingquality / crafttime)
+const FOODS = [
+  { id: 'T2_MEAL_SALAD', n: 'Bean Salad', q: 33, sp: 16 }, { id: 'T4_MEAL_SALAD', n: 'Turnip Salad', q: 66, sp: 32 },
+  { id: 'T6_MEAL_SALAD', n: 'Potato Salad', q: 99, sp: 48 }, { id: 'T2_MEAL_SALAD_FISH', n: 'Shallowshore Squid Salad' },
+  { id: 'T4_MEAL_SALAD_FISH', n: 'Midwater Octopus Salad' }, { id: 'T6_MEAL_SALAD_FISH', n: 'Deepwater Kraken Salad' },
+];
+function feeLog(s) {
+  const fees = s.fees || [];
+  return `<h3>Station fees</h3>
+    <p class="hint">The station charges per craft run. Each time it charges you (or you switch item or tier), log what it showed.${fees.length ? '' : ` Until you do, the estimate of ${fmt(s.fee)} is used.`}</p>
+    <div class="row"><label>Fee charged<input type="number" min="0" id="feeAmt" style="width:110px"></label>
+      <label>For<input id="feeNote" placeholder="e.g. first 5 swords" style="width:170px"></label>${btn('fee', 'Log fee')}</div>
+    ${fees.length ? `<table class="fees">${fees.map((f, i) => `<tr><td class="dim">${new Date(f.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td><td style="text-align:left">${esc(f.note || '')}</td><td>${fmt(f.amount)}</td><td><button class="ghost sm" data-sact="feedel:${i}">✕</button></td></tr>`).join('')}
+      <tr><td></td><td style="text-align:left"><b>Total fees</b></td><td><b>${fmt(sFee(s))}</b></td><td></td></tr></table>` : ''}`;
+}
 const sEarned = s => (s.sellN.reduce((a, n, q) => a + n * s.sell[q], 0) + s.jFull * s.jPrice) * sellMult();
 let lastStep = -1, popQ = -1;
 
@@ -835,11 +914,17 @@ function buildShop(s) {
 async function sessionPrices() {
   const s = S.session, g = s && sg();
   renderAll();
+  if (!s) {  // no session: refresh prices for "Your crafts"
+    const rows = historyRows();
+    if (!rows.length) return;
+    try { await fetchCraftPrices(rows, false); statusMsg = 'prices loaded ' + new Date().toLocaleTimeString(); } catch (err) { statusMsg = 'price fetch failed (' + err.message + ')'; }
+    return renderAll();
+  }
   if (!g) return;
   const city = sCity(s);
   try {
     await fetchPrices(g.r[s.t].map(([tmpl]) => resId(tmpl, s.e)), '1', [city], 'prices');
-    await fetchPrices([jId(s, 'EMPTY'), jId(s, 'FULL')], '1', CITIES, 'journals');
+    await fetchPrices([jId(s, 'EMPTY'), jId(s, 'FULL'), ...FOODS.map(f => f.id)], '1', CITIES, 'journals and food');
     await fetchPrices([gearId(g, s.t, s.e)], '1,2,3,4,5', [city], 'gear');
     statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
   } catch (err) { statusMsg = 'price fetch failed (' + err.message + ')'; }
@@ -860,7 +945,7 @@ function sessionInput(el) {
   ['t', 'e', 'city'].includes(path) ? sessionPrices() : renderAll();
 }
 function sessionAction(action) {
-  const s = S.session, [act, arg] = action.split(':');
+  const s = S.session, [act, ...rest] = action.split(':'), arg = rest.join(':');
   if (act === 'new') newSession();
   else if (act === 'abandon') { if (!confirm('Discard this crafting session?')) return; S.session = null; }
   else if (act === 'back') s.step--;
@@ -880,9 +965,28 @@ function sessionAction(action) {
   else if (act === 'dec') { s.crafted[arg] = Math.max(0, s.crafted[arg] - 1); popQ = +arg; }
   else if (act === 'fill') { s.crafted[0] += Math.max(0, s.n - s.crafted.reduce((a, b) => a + b, 0)); popQ = 0; }
   else if (act === 'extra') s.shop.push({ id: '', name: '', need: 1, price: 0, got: false });
+  else if (act === 'food') {
+    const f = FOODS.find(x => x.id === arg), city = sCity(s);
+    s.shop.push({ id: f.id, name: f.n, need: 1, price: price(f.id, city, 'buy').v || anyCity(f.id, 'buy'), got: false });
+  }
+  else if (act === 'fee') {
+    const amount = +document.getElementById('feeAmt').value;
+    if (!amount) return document.getElementById('feeAmt').focus();
+    (s.fees ||= []).push({ amount, note: document.getElementById('feeNote').value.trim(), at: Date.now() });
+  }
+  else if (act === 'feedel') s.fees.splice(+arg, 1);
+  else if (act === 'again') {
+    const h = S.history[arg];
+    newSession();
+    Object.assign(S.session, { gid: h.gid, t: h.t, e: h.e, n: Math.max(1, Math.round(h.crafted / h.times)) });
+    save(); return sessionPrices();
+  }
   else if (act === 'del') s.shop.splice(+arg, 1);
   else if (act === 'save') {
-    const g = sg();
+    const g = sg(), made = s.crafted.reduce((a, b) => a + b, 0), key = `${s.gid}|${s.t}|${s.e}`;
+    const h = S.history[key] ||= { gid: s.gid, t: s.t, e: s.e, times: 0, crafted: 0 };
+    Object.assign(h, { times: h.times + 1, crafted: h.crafted + made, last: today(), city: sCity(s), soldAt: s.sell[0],
+      unitProfit: made ? (sEarned(s) - sSpent(s)) / made : 0 });
     addLog({ kind: 'craft', title: `${s.n}× ${g.n} T${s.t}.${s.e} (${sCity(s)})`, spent: Math.round(sSpent(s)), earned: Math.round(sEarned(s)) });
     S.session = null; S.tab = 'log';
   }
@@ -946,9 +1050,12 @@ function sessionBody(s, g) {
           <td><input type="number" min="0" data-s="shop.${i}.need" value="${x.need}"></td>
           <td><input type="number" min="0" data-s="shop.${i}.price" value="${x.price || ''}" placeholder="—"></td>
           <td>${fmt(x.need * x.price)}</td><td>${x.id ? '' : `<button class="ghost sm" data-sact="del:${i}">✕</button>`}</td></tr>`).join('')}
-        <tr><td></td><td>Station fee (estimate)</td><td></td><td></td><td>${fmt(s.fee)}</td><td></td></tr>
+        <tr><td></td><td>Station fees ${s.fees?.length ? '(logged)' : '(estimate)'}</td><td></td><td></td><td>${fmt(sFee(s))}</td><td></td></tr>
         <tr><td></td><td><b>Total</b></td><td></td><td></td><td><b>${fmt(sSpent(s))}</b></td><td></td></tr></table></div>
         <p class="hint">Tick each item as you buy it and correct the price to what you actually paid. Amounts already subtract your ${pct} return rate: keep crafting the returned materials until they run out.</p>
+        <h3>Crafting food</h3>
+        <p class="hint">Salads raise crafting quality while the buff lasts (higher odds of better quality) and speed up crafting.</p>
+        <div class="foods">${FOODS.map(f => `<button class="ghost sm" data-sact="food:${f.id}" title="${f.q ? `+${f.q} crafting quality, +${f.sp}% craft speed` : 'Crafting food'}">+ ${f.n}${f.q ? ` (+${f.q})` : ''}</button>`).join('')}</div>
         <div class="actions">${btn('back', '← Back', 1)}${btn('extra', '+ Add extra', 1)}${btn('next', all ? 'Got everything →' : 'Continue →')}</div>`;
     }
     case 2:
@@ -960,7 +1067,8 @@ function sessionBody(s, g) {
           ${s.journals ? `<li>Put your ${s.journals} empty journal${s.journals > 1 ? 's' : ''} in your bag before crafting</li>` : ''}
           <li>Keep the Albion Data Client running: you'll open the market here later</li>
         </ul>
-        <div class="row"><label>Station fee paid (total)<input type="number" min="0" data-s="fee" value="${s.fee}"></label></div>
+        ${s.shop.some(x => FOODS.some(f => f.id === x.id)) ? '<p class="pos">🥗 Eat your salad right before you start crafting.</p>' : ''}
+        ${feeLog(s)}
         <div class="actions">${btn('back', '← Back', 1)}${btn('next', "I'm at the station →")}</div>`;
     case 3: {
       const total = s.crafted.reduce((a, b) => a + b, 0), gained = s.specAfter - s.specBefore;
@@ -976,6 +1084,7 @@ function sessionBody(s, g) {
           ${btn('fill', 'Rest were Normal', 1)}
         </div>
         ${gained > 0 ? `<p class="pos pop">+${gained} spec level${gained > 1 ? 's' : ''} unlocked! 🎉</p>` : ''}
+        ${feeLog(s)}
         <div class="actions">${btn('back', '← Back', 1)}${btn('next', 'Done crafting →')}</div>`;
     }
     case 4: {
@@ -1001,12 +1110,71 @@ function sessionBody(s, g) {
     }
   }
 }
+const historyRows = () => Object.values(S.history).map(h => ({ g: D.gear.find(x => x.id === h.gid), t: h.t, e: h.e, h })).filter(r => r.g);
+function historyHtml() {
+  const rows = historyRows().sort((a, b) => cmp(b.h.last, a.h.last));
+  if (!rows.length) return '<p class="hint" style="text-align:center">Items you finish crafting show up here, so you can check their prices and craft them again.</p>';
+  return `<h3>Your crafts</h3><div class="wrap"><table>
+    <tr><th>Item</th><th>Sessions</th><th>Crafted</th><th>Last profit/craft</th><th>Last sold at</th><th>Market now</th><th>Est. profit now</th><th></th></tr>
+    ${rows.map(({ g, t, e, h }) => {
+      const c = calcCraft({ g, t, e }, S.useFocus), now = c.sell.v;
+      const trend = now && h.soldAt ? (now > h.soldAt * 1.05 ? ' <span class="pos">▲</span>' : now < h.soldAt * 0.95 ? ' <span class="neg">▼</span>' : '') : '';
+      return `<tr><td>${icon(gearId(g, t, e), h.city)}${esc(g.n)} <span class="dim">T${t}.${e}</span></td><td>${h.times}</td><td>${h.crafted}</td>
+        <td class="${cls(h.unitProfit)}">${fmt(h.unitProfit)}</td><td>${h.soldAt ? fmt(h.soldAt) : '—'}</td><td>${now ? fmt(now) + trend : '—'}</td>
+        <td class="${c.ok ? cls(c.profit) : 'dim'}">${c.ok ? fmt(c.profit) : '—'}</td><td><button class="sm" data-sact="again:${g.id}|${t}|${e}">Craft again</button></td></tr>`;
+    }).join('')}</table></div>
+    <p class="hint">"Market now" and "Est. profit now" use the Crafting tab's cities. ▲▼ compare today's price with what you last sold at. Tap an icon for the price chart.</p>`;
+}
+
+// ---------- what can I craft today ----------
+let todayPicks = [];
+async function craftToday() {
+  const out = document.getElementById('today');
+  out.hidden = false;
+  out.innerHTML = '<p class="hint">Scanning every craftable item… (picking a tier above makes this faster)</p>';
+  const rows = D.gear.flatMap(g => g.t.flatMap(t => ENCH.map(e => ({ g, t, e }))))
+    .filter(({ g, t, e }) => (S.cTier === '0' || +S.cTier === t) && (S.cEnch === '-1' || +S.cEnch === e) && g.f[t][e] != null);
+  try {
+    await fetchCraftPrices(rows, true);
+    const sc = c => S.cSellCity || c.city;
+    const good = rows.map(x => calcCraft(x, S.useFocus)).filter(c => c.ok && c.profit > 0)
+      .sort((a, b) => b.profit / (b.cost + b.fee) - a.profit / (a.cost + a.fee)).slice(0, 80);
+    setStatus('checking sales volume…');
+    const V = good.length ? await dailyVolume(new Set(good.map(c => gearId(c.g, c.t, c.e))), new Set(good.map(sc))) : {};
+    todayPicks = good.map(c => {
+      const vol = V[`${gearId(c.g, c.t, c.e)}|${sc(c)}`] || 0, n = Math.min(50, Math.floor(vol * S.planShare / 100));
+      return { ...c, vol, n, total: n * c.profit };
+    }).filter(c => c.n > 0).sort((a, b) => b.total - a.total).slice(0, 8);
+    out.innerHTML = todayPicks.length ? `<h3>Best crafts today</h3><div class="cards">${todayPicks.map((c, i) => `
+      <div class="card today" style="animation-delay:${i * 60}ms">${icon(gearId(c.g, c.t, c.e), sc(c))}<b>${esc(c.g.n)} T${c.t}.${c.e}</b>
+        <small>craft in ${c.city} · sells ${Math.round(c.vol)}/day</small>
+        <small>${fmt(c.profit)} per craft · ${(100 * c.profit / (c.cost + c.fee)).toFixed(0)}% margin</small>
+        <span class="pos">≈ ${fmt(c.total)} for ${c.n} crafts</span>
+        <button data-today="${i}">Craft this →</button></div>`).join('')}</div>
+      <p class="hint">Ranked by total profit for a sensible batch: at most ${S.planShare}% of daily sales (the planner's setting), max 50. Normal quality only, so better qualities are a bonus. Check the age of prices before buying.</p>`
+      : '<p class="hint">Nothing profitable with real sales volume right now. Try another tier or enchant, Buy orders, or raise Max price age.</p>';
+    statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
+  } catch (err) { out.innerHTML = `<p class="hint neg">Scan failed (${err.message}).</p>`; }
+  renderAll();
+}
+document.getElementById('todayBtn').onclick = craftToday;
+document.addEventListener('click', ev => {
+  const i = ev.target.closest('[data-today]')?.dataset.today;
+  if (i == null) return;
+  const c = todayPicks[i];
+  if (S.session && !confirm('Replace the crafting session you have running?')) return;
+  newSession();
+  Object.assign(S.session, { gid: c.g.id, t: c.t, e: c.e, n: c.n });
+  S.tab = 'session'; save(); sessionPrices();
+});
+
 function renderSession() {
   const el = document.getElementById('session'), s = S.session;
   if (!s) {
     el.innerHTML = `<div class="hero ${lastStep !== -2 ? 'enter' : ''}"><div class="trophy">⚒️</div><h2>Ready to craft?</h2>
       <p class="hint">A session walks you through it: pick the gear, buy materials and journals, travel, craft, log your qualities and spec, then sell. It's saved (and synced) the whole way, so you can close the app and come back.</p>
-      <div class="actions" style="justify-content:center">${btn('new', 'Start a crafting session').replace('<button', '<button class="big"')}</div></div>`;
+      <div class="actions" style="justify-content:center">${btn('new', 'Start a crafting session').replace('<button', '<button class="big"')}</div></div>
+      ${historyHtml()}`;
     lastStep = -2;
     return '';
   }
