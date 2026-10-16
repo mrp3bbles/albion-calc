@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Albion Refining Calc</title>
+<style>
+:root{--bg:#14110d;--panel:#1f1a14;--line:#3a3127;--text:#e8dcc6;--dim:#9c8f7a;--gold:#d9a84e;--pos:#6fcf73;--neg:#e46a5a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,sans-serif;padding:16px}
+h1{font-size:20px;color:var(--gold);margin:0 0 12px}
+h3{margin:12px 0 6px;font-size:13px;color:var(--gold)}
+details,section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+summary{cursor:pointer;color:var(--gold)}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+label{display:flex;flex-direction:column;gap:2px;color:var(--dim);font-size:12px}
+label.chk{flex-direction:row;align-items:center;gap:6px}
+input,select,button{background:#0f0c09;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:5px 6px;font:inherit}
+input[type=number]{width:80px}
+button{background:var(--gold);color:#1a1208;font-weight:600;cursor:pointer;border:0;padding:7px 14px}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--dim);font-weight:500}
+td:first-child,th:first-child{text-align:left}
+td input{width:80px;text-align:right}
+td img{width:28px;height:28px;vertical-align:middle;margin-right:4px}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.dim{color:var(--dim)}
+.hint{color:var(--dim);font-size:12px;margin:6px 0 0}
+</style>
+</head>
+<body>
+<h1>Albion Refining Calc · EU</h1>
+
+<section>
+  <div class="row">
+    <label>Material<select data-k="mat"><option value="leather">Leather</option><option value="cloth">Cloth</option></select></label>
+    <label>Refine in<select data-k="refineCity" class="cities"><option value="">Bonus city</option></select></label>
+    <label>Buy in<select data-k="buyCity" class="cities"><option value="">Same as refine</option></select></label>
+    <label>Sell in<select data-k="sellCity" class="cities"><option value="">Same as refine</option></select></label>
+    <label>Buy via<select data-k="buyMode"><option value="instant">Instant buy</option><option value="order">Buy order</option></select></label>
+    <label>Sell via<select data-k="sellMode"><option value="order">Sell order</option><option value="instant">Instant sell</option></select></label>
+    <label>Crafts<input type="number" data-k="qty" min="1"></label>
+    <label class="chk"><input type="checkbox" data-k="premium">Premium</label>
+    <label class="chk"><input type="checkbox" data-k="useFocus">Focus</label>
+    <button id="refresh">Refresh prices</button>
+  </div>
+  <p class="hint" id="status"></p>
+</section>
+
+<section class="wrap"><table id="tbl"></table>
+  <p class="hint">Price cells are editable. Type what you see in-game to override stale data (Refresh clears overrides). Prices older than 24h are red.</p>
+</section>
+
+<details>
+  <summary>Spec &amp; focus</summary>
+  <p class="hint">Without focus, spec doesn't change refining profit. It only lowers focus cost. Enter a tier's base focus cost (at 0 spec) to see silver per focus point.</p>
+  <div class="wrap"><table id="spec"></table></div>
+  <div class="row" style="margin-top:8px"><label>FCE per spec level<input type="number" data-k="fcePerLevel"></label></div>
+</details>
+
+<details>
+  <summary>Game numbers (adjust if a patch changes them)</summary>
+  <h3>Return rate: production bonus %</h3>
+  <div class="row">
+    <label>Base<input type="number" data-k="baseBonus"></label>
+    <label>Bonus city<input type="number" data-k="cityBonus"></label>
+    <label>Focus<input type="number" data-k="focusBonus"></label>
+    <label>Daily bonus<input type="number" data-k="dailyBonus"></label>
+  </div>
+  <p class="hint">Return rate = 1 − 1/(1 + bonus%). Defaults: 15.2% royal city, 36.7% bonus city, 53.9% bonus city + focus.</p>
+  <h3>Market %</h3>
+  <div class="row">
+    <label>Tax (no premium)<input type="number" data-k="taxNoPrem" step="0.5"></label>
+    <label>Tax (premium)<input type="number" data-k="taxPrem" step="0.5"></label>
+    <label>Order setup fee<input type="number" data-k="setup" step="0.5"></label>
+  </div>
+  <h3>Station</h3>
+  <div class="row">
+    <label>Usage fee (per 100 nutrition)<input type="number" data-k="stationFee"></label>
+    <label>Nutrition factor<input type="number" data-k="nutrition" step="0.0005"></label>
+  </div>
+  <p class="hint">The fee is estimated from approximate item values. If it doesn't match what the station shows, adjust the nutrition factor.</p>
+</details>
+
+<script>
+const API = 'https://europe.albion-online-data.com/api/v2/stats/prices/';
+const CITIES = ['Martlock', 'Lymhurst', 'Bridgewatch', 'Fort Sterling', 'Thetford', 'Caerleon', 'Brecilien'];
+const MATS = {
+  leather: { raw: 'HIDE', out: 'LEATHER', bonus: 'Martlock' },
+  cloth:   { raw: 'FIBER', out: 'CLOTH', bonus: 'Lymhurst' },
+};
+const RAW_COUNT = { 3: 2, 4: 2, 5: 3, 6: 4, 7: 5, 8: 5 };
+const TIERS = [4, 5, 6, 7, 8], ENCH = [0, 1, 2, 3, 4];
+const DEFAULTS = {
+  mat: 'leather', refineCity: '', buyCity: '', sellCity: '', buyMode: 'instant', sellMode: 'order', qty: 100,
+  premium: false, useFocus: false,
+  baseBonus: 18, cityBonus: 40, focusBonus: 59, dailyBonus: 0,
+  taxNoPrem: 8, taxPrem: 4, setup: 2.5, stationFee: 400, nutrition: 0.1125,
+  fcePerLevel: 250,
+  spec: { leather: { 4: 24, 5: 14, 6: 3, 7: 0, 8: 0 }, cloth: { 4: 23, 5: 14, 6: 1, 7: 0, 8: 0 } },
+  baseFocus: { leather: { 4: '', 5: '', 6: '', 7: '', 8: '' }, cloth: { 4: '', 5: '', 6: '', 7: '', 8: '' } },
+};
+
+let S = structuredClone(DEFAULTS);
+try { Object.assign(S, JSON.parse(localStorage.getItem('albionCalc') || '{}')); } catch {}
+const save = () => { try { localStorage.setItem('albionCalc', JSON.stringify(S)); } catch {} };
+
+let P = {};  // "item|city" -> API row
+let O = {};  // "item|city|field" -> manual override
+
+const itemId = (t, e, kind) => `T${t}_${kind}` + (e ? `_LEVEL${e}@${e}` : '');
+const prevId = (t, e) => t === 4 ? `T3_${MATS[S.mat].out}` : itemId(t - 1, e, MATS[S.mat].out);
+const refineCity = () => S.refineCity || MATS[S.mat].bonus;
+const buyCity = () => S.buyCity || refineCity();
+const sellCity = () => S.sellCity || refineCity();
+const tax = () => S.premium ? S.taxPrem : S.taxNoPrem;
+const rrr = bonus => 1 - 1 / (1 + bonus / 100);
+const returnRate = focus => rrr(S.baseBonus + (refineCity() === MATS[S.mat].bonus ? S.cityBonus : 0) + (focus ? S.focusBonus : 0) + S.dailyBonus);
+
+// ponytail: approximate item values (raw = 2^tier × 2^enchant). Calibrate with the nutrition factor
+const rawVal = (t, e) => 2 ** t * 2 ** e;
+const refVal = (t, e) => t === 3 ? 20 : RAW_COUNT[t] * rawVal(t, e) + refVal(t - 1, t === 4 ? 0 : e);
+
+function price(item, city, side) {
+  // buying: instant = lowest sell order, order = highest buy order. Selling is the reverse
+  const field = (side === 'buy') === (S[side + 'Mode'] === 'instant') ? 'sell_price_min' : 'buy_price_max';
+  const key = `${item}|${city}|${field}`, row = P[`${item}|${city}`];
+  const d = row && row[field] ? new Date(row[field + '_date'] + 'Z') : null;
+  return { key, v: key in O ? O[key] : (row?.[field] || 0), d: key in O ? new Date() : d };
+}
+
+function calc(t, e, focus) {
+  const m = MATS[S.mat], n = RAW_COUNT[t];
+  const raw = price(itemId(t, e, m.raw), buyCity(), 'buy');
+  const prev = price(prevId(t, e), buyCity(), 'buy');
+  const out = price(itemId(t, e, m.out), sellCity(), 'sell');
+  const r = returnRate(focus);
+  const buyMult = S.buyMode === 'order' ? 1 + S.setup / 100 : 1;
+  const sellMult = 1 - tax() / 100 - (S.sellMode === 'order' ? S.setup / 100 : 0);
+  const cost = (n * raw.v + prev.v) * buyMult * (1 - r);  // returned mats valued at buy price
+  const fee = refVal(t, e) * S.nutrition * S.stationFee / 100;
+  const profit = out.v * sellMult - cost - fee;
+  return { t, e, n, r, raw, prev, out, cost, fee, profit, ok: raw.v && prev.v && out.v };
+}
+
+const focusCost = t => {
+  const base = S.baseFocus[S.mat][t];
+  return base === '' ? null : base * 0.5 ** (S.spec[S.mat][t] * S.fcePerLevel / 10000);
+};
+
+const fmt = x => Math.round(x).toLocaleString();
+const cls = x => x >= 0 ? 'pos' : 'neg';
+const ageText = ds => {
+  const d = ds.filter(Boolean);
+  if (d.length < ds.length) return '<span class="neg">no data</span>';
+  const h = (Date.now() - Math.min(...d)) / 36e5;
+  return `<span class="${h > 24 ? 'neg' : 'dim'}">${h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd'}</span>`;
+};
+const cell = p => `<td><input type="number" data-o="${p.key}" value="${p.v || ''}" placeholder="—"></td>`;
+
+function render() {
+  const rows = TIERS.flatMap(t => ENCH.map(e => calc(t, e, S.useFocus)))
+    .sort((a, b) => (b.ok - a.ok) || (b.profit - a.profit));
+  const m = MATS[S.mat];
+  document.getElementById('tbl').innerHTML =
+    `<tr><th>Item</th><th>Raw</th><th>Prev</th><th>Sell</th><th>Cost/craft</th><th>Fee</th><th>Profit/craft</th><th>Margin</th><th>×${S.qty}</th><th>Buy for ×${S.qty}</th>${S.useFocus ? '<th>Silver/focus</th>' : ''}<th>Age</th></tr>` +
+    rows.map(c => {
+      const id = itemId(c.t, c.e, m.out), q = S.qty, spend = c.cost + c.fee;
+      let spf = '';
+      if (S.useFocus) {
+        const fc = focusCost(c.t);
+        spf = `<td>${fc && c.ok ? ((c.profit - calc(c.t, c.e, false).profit) / fc).toFixed(1) : '—'}</td>`;
+      }
+      return `<tr><td><img src="https://render.albiononline.com/v1/item/${id}.png?size=56" alt="" loading="lazy">T${c.t}.${c.e}</td>` +
+        cell(c.raw) + cell(c.prev) + cell(c.out) +
+        (c.ok
+          ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td><td class="${cls(c.profit)}">${fmt(c.profit)}</td><td class="${cls(c.profit)}">${(100 * c.profit / spend).toFixed(1)}%</td><td class="${cls(c.profit)}">${fmt(c.profit * q)}</td>`
+          : '<td colspan="5" class="dim">missing price</td>') +
+        `<td class="dim">${Math.ceil(q * c.n * (1 - c.r))} raw + ${Math.ceil(q * (1 - c.r))} T${c.t - 1}</td>${spf}<td>${ageText([c.raw.d, c.prev.d, c.out.d])}</td></tr>`;
+    }).join('');
+  document.getElementById('status').textContent =
+    `Return rate ${(100 * returnRate(S.useFocus)).toFixed(1)}% · refine in ${refineCity()} · buy in ${buyCity()} · sell in ${sellCity()} · tax ${tax()}%` + (statusMsg ? ' · ' + statusMsg : '');
+}
+
+function renderSpec() {
+  document.getElementById('spec').innerHTML = '<tr><th></th>' + TIERS.map(t => `<th>T${t}</th>`).join('') + '</tr>' +
+    ['leather', 'cloth'].map(mat =>
+      `<tr><td>${mat} spec</td>` + TIERS.map(t => `<td><input type="number" min="0" max="100" data-k="spec.${mat}.${t}"></td>`).join('') + '</tr>' +
+      `<tr><td>${mat} base focus</td>` + TIERS.map(t => `<td><input type="number" min="0" data-k="baseFocus.${mat}.${t}"></td>`).join('') + '</tr>' +
+      `<tr><td class="dim">focus cost ×</td>` + TIERS.map(t => `<td class="dim">${(0.5 ** (S.spec[mat][t] * S.fcePerLevel / 10000)).toFixed(2)}</td>`).join('') + '</tr>'
+    ).join('');
+  bind();
+}
+
+const getK = p => p.split('.').reduce((a, k) => a[k], S);
+const setK = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((a, k) => a[k], S)[last] = v; };
+function bind() {
+  document.querySelectorAll('[data-k]').forEach(el => {
+    const v = getK(el.dataset.k);
+    if (el.type === 'checkbox') el.checked = v; else el.value = v;
+    el.onchange = () => {
+      setK(el.dataset.k, el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? '' : +el.value) : el.value);
+      save();
+      if (el.closest('#spec') || el.dataset.k === 'fcePerLevel') renderSpec();
+      render();
+    };
+  });
+}
+
+document.getElementById('tbl').addEventListener('change', ev => {
+  const k = ev.target.dataset.o;
+  if (!k) return;
+  if (ev.target.value === '') delete O[k]; else O[k] = +ev.target.value;
+  render();
+});
+
+let statusMsg = '';
+async function refresh() {
+  const ids = new Set();
+  for (const m of Object.values(MATS)) {
+    ids.add(`T3_${m.out}`);
+    for (const t of TIERS) for (const e of ENCH) { ids.add(itemId(t, e, m.raw)); ids.add(itemId(t, e, m.out)); }
+  }
+  statusMsg = 'loading prices…'; render();
+  try {
+    const res = await fetch(`${API}${[...ids].join(',')}.json?qualities=1&locations=${encodeURIComponent(CITIES.join(','))}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    P = {}; O = {};
+    for (const r of await res.json()) P[`${r.item_id}|${r.city}`] = r;
+    statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    statusMsg = 'price fetch failed (' + err.message + '). Type prices in manually';
+  }
+  render();
+}
+
+function selfTest() {
+  const near = (a, b) => Math.abs(a - b) < 0.001;
+  console.assert(near(rrr(18), 0.1525) && near(rrr(58), 0.3671) && near(rrr(117), 0.5392), 'return rate formula');
+  console.assert(refVal(4, 0) === 2 * 16 + 20 && refVal(5, 1) === 3 * 64 + refVal(4, 1), 'item value chain');
+  console.assert(itemId(5, 2, 'HIDE') === 'T5_HIDE_LEVEL2@2' && itemId(4, 0, 'CLOTH') === 'T4_CLOTH', 'item ids');
+}
+
+document.querySelectorAll('select.cities').forEach(s => s.insertAdjacentHTML('beforeend', CITIES.map(c => `<option>${c}</option>`).join('')));
+document.getElementById('refresh').onclick = refresh;
+selfTest();
+renderSpec();
+refresh();
+</script>
+</body>
+</html>
