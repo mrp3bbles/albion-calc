@@ -579,6 +579,7 @@ async function makePlan() {
     return best && { ...best, spend: best.cost + best.fee, outId: itemId(t, e, m.out) };
   })).filter(Boolean);
   const picks = planRun(candidates, V, S.budget, S.planShare);
+  lastPlan = { mat: S.mat, city: S.refineCity, picks };
   if (!picks.length) {
     out.innerHTML = `<p class="hint">Nothing worth refining right now with these settings${candidates.length ? ` (${candidates.length} items are profitable, but none fit the budget or have enough sales)` : ''}. Try buy orders, shopping around, or more tiers.</p>`;
     return;
@@ -603,9 +604,16 @@ async function makePlan() {
       <li>Refine everything in <b>${refineCity()}</b>, ${(100 * picks[0].r).toFixed(1)}% return rate. Keep refining the returned materials until they run out.</li>
       ${byCity('sc', c => `${c.n}× T${c.t}.${c.e} ${m.out.toLowerCase()}`).replace(/<li>/g, `<li>Sell (${mode('sell')}) in `)}
     </ol>
-    <div class="actions"><button class="ghost" id="planLog" data-title="${S.mat} T${picks.map(c => c.t + '.' + c.e).join(', ')}" data-spent="${Math.round(spend)}" data-earned="${Math.round(spend + profit)}">Log this run</button></div>
+    <div class="actions"><button class="ghost" id="planLog" data-title="${S.mat} T${picks.map(c => c.t + '.' + c.e).join(', ')}" data-spent="${Math.round(spend)}" data-earned="${Math.round(spend + profit)}">Log this run</button><button id="planSession">Start as a refining session →</button></div>
     <p class="hint">Buy amounts already subtract what returns give back, so you buy less than crafts × recipe. Spend includes the station fee${S.buyMode === 'order' ? ' and buy-order setup fees' : ''}. ${budgetLeftNote(S.budget - spend)}</p>`;
 }
+let lastPlan = null;
+document.addEventListener('click', ev => {
+  if (ev.target.id !== 'planSession' || !lastPlan) return;
+  if (S.session && !confirm('Replace the session you have running?')) return;
+  newRefineSession(lastPlan.mat, lastPlan.picks.map(c => rLine(c.t, c.e, c.n, c.bc, c.sc)), lastPlan.city);
+  S.tab = 'session'; save(); sessionPrices();
+});
 const budgetLeftNote = left => left > 0.1 * S.budget ? `${fmt(left)} silver left unspent: sales volume capped the plan.` : '';
 
 // ---------- crafting ----------
@@ -894,7 +902,7 @@ function feeLog(s) {
     ${fees.length ? `<table class="fees">${fees.map((f, i) => `<tr><td class="dim">${new Date(f.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td><td style="text-align:left">${esc(f.note || '')}</td><td>${fmt(f.amount)}</td><td><button class="ghost sm" data-sact="feedel:${i}">✕</button></td></tr>`).join('')}
       <tr><td></td><td style="text-align:left"><b>Total fees</b></td><td><b>${fmt(sFee(s))}</b></td><td></td></tr></table>` : ''}`;
 }
-const sEarned = s => (s.sellN.reduce((a, n, q) => a + n * s.sell[q], 0) + s.jFull * s.jPrice) * sellMult();
+const sEarned = s => s.kind === 'refine' ? s.lines.reduce((a, l) => a + l.sold * l.price, 0) * sellMult() : (s.sellN.reduce((a, n, q) => a + n * s.sell[q], 0) + s.jFull * s.jPrice) * sellMult();
 let lastStep = -1, popQ = -1;
 
 function newSession() {
@@ -918,6 +926,10 @@ async function sessionPrices() {
     const rows = historyRows();
     if (!rows.length) return;
     try { await fetchCraftPrices(rows, false); statusMsg = 'prices loaded ' + new Date().toLocaleTimeString(); } catch (err) { statusMsg = 'price fetch failed (' + err.message + ')'; }
+    return renderAll();
+  }
+  if (s.kind === 'refine') {
+    try { await fetchPrices(refineIds(), '1', CITIES); statusMsg = 'prices loaded ' + new Date().toLocaleTimeString(); } catch (err) { statusMsg = 'price fetch failed (' + err.message + ')'; }
     return renderAll();
   }
   if (!g) return;
@@ -946,8 +958,17 @@ function sessionInput(el) {
 }
 function sessionAction(action) {
   const s = S.session, [act, ...rest] = action.split(':'), arg = rest.join(':');
-  if (act === 'new') newSession();
-  else if (act === 'abandon') { if (!confirm('Discard this crafting session?')) return; S.session = null; }
+  if (act === 'new') { arg === 'refine' ? newRefineSession() : newSession(); save(); return sessionPrices(); }
+  else if (act === 'abandon') { if (!confirm('Discard this session?')) return; S.session = null; }
+  else if (act === 'radd') { const l = s.lines.at(-1); s.lines.push(rLine(Math.min(8, l.t + 1), l.e, l.n, l.bc, l.sc)); }
+  else if (act === 'rdel') s.lines.splice(+arg, 1);
+  else if (act === 'radj') { const [i, d] = arg.split(':').map(Number), l = s.lines[i]; l.made = Math.max(0, l.made + d); popQ = i; }
+  else if (act === 'rall') { const l = s.lines[+arg]; l.made = Math.max(l.made, l.n); popQ = +arg; }
+  else if (act === 'next' && isRefine(s)) { refineNext(s); s.step++; }
+  else if (act === 'save' && isRefine(s)) {
+    addLog({ kind: 'refine', title: `${s.mat} ${s.lines.map(l => `T${l.t}.${l.e}×${l.made}`).join(', ')} (${rCity(s)})`, spent: Math.round(sSpent(s)), earned: Math.round(sEarned(s)) });
+    S.session = null; S.tab = 'log';
+  }
   else if (act === 'back') s.step--;
   else if (act === 'next') {
     if (s.step === 0) { buildShop(s); s.started = Date.now(); }
@@ -1009,12 +1030,139 @@ function confetti() {
 function countUp(root) {
   root.querySelectorAll('[data-to]').forEach(el => {
     const to = +el.dataset.to, t0 = performance.now(), dur = 900;
+    el.textContent = fmt(to);  // final value stays if animation frames never run (background tab)
     const step = now => { const k = Math.min(1, (now - t0) / dur); el.textContent = fmt(to * (1 - (1 - k) ** 3)); if (k < 1) requestAnimationFrame(step); };
     requestAnimationFrame(step);
   });
 }
 const card = (label, value, extra = '') => `<div class="card"><small>${label}</small><b ${extra}>${value}</b></div>`;
 const btn = (act, label, ghost) => `<button ${ghost ? 'class="ghost"' : ''} data-sact="${act}">${label}</button>`;
+
+
+// ---------- refining session ----------
+// Shares the craft session's stepper, fee log and run-log saving; S.session.kind === 'refine'.
+const isRefine = s => s?.kind === 'refine';
+const R_STEPS = ['Choose', 'Shop', 'Travel', 'Refine', 'Sell', 'Done'];
+const rOut = s => MATS[s.mat].out, rRaw = s => MATS[s.mat].raw;
+const rCity = s => s.city || MATS[s.mat].bonus;
+const rRate = s => rrr(S.baseBonus + (rCity(s) === MATS[s.mat].bonus ? S.cityBonus : 0) + (S.useFocus ? S.focusBonus : 0) + S.dailyBonus);
+const rPrev = (s, t, e) => t === 4 ? `T3_${rOut(s)}` : itemId(t - 1, e, rOut(s));
+const rBuy = (s, l) => l.bc || rCity(s), rSell = (s, l) => l.sc || rCity(s);
+const rLine = (t = 4, e = 0, n = 50, bc = '', sc = '') => ({ t, e, n, bc, sc, made: 0, sold: 0, price: 0 });
+
+function newRefineSession(mat = S.mat, lines = [rLine()], city = '') {
+  S.session = { kind: 'refine', step: 0, mat, city, lines, shop: [], fee: 0, fees: [], spec: {}, specAfter: {}, started: 0, finished: 0 };
+}
+function rEstimate(s, l) {
+  const bc = rBuy(s, l);
+  const raw = price(itemId(l.t, l.e, rRaw(s)), bc, 'buy').v, prev = price(rPrev(s, l.t, l.e), bc, 'buy').v;
+  const out = price(itemId(l.t, l.e, rOut(s)), rSell(s, l), 'sell').v;
+  const cost = (RAW_COUNT[l.t] * raw + prev) * buyMult() * (1 - rRate(s)) + stationFee(D.ref[rOut(s)][l.t][l.e][1]);
+  return { ok: !!(raw && prev && out), profit: out * sellMult() - cost };
+}
+function buildRefineShop(s) {
+  const r = rRate(s), merged = {};
+  const add = (id, city, need) =>
+    (merged[id + '|' + city] ||= { id, city, name: `${itemName(id)} · ${city}`, need: 0, price: price(id, city, 'buy').v, got: false }).need += need;
+  s.lines.forEach(l => {
+    add(itemId(l.t, l.e, rRaw(s)), rBuy(s, l), Math.ceil(l.n * RAW_COUNT[l.t] * (1 - r)));
+    add(rPrev(s, l.t, l.e), rBuy(s, l), Math.ceil(l.n * (1 - r)));
+  });
+  s.shop = Object.values(merged);
+  s.fee = Math.round(s.lines.reduce((a, l) => a + stationFee(D.ref[rOut(s)][l.t][l.e][1]) * l.n, 0));
+  s.spec = Object.fromEntries(s.lines.map(l => [l.t, S.spec[s.mat][l.t]]));
+  s.specAfter = { ...s.spec };
+}
+function refineNext(s) {
+  if (s.step === 0) { buildRefineShop(s); s.started = Date.now(); }
+  if (s.step === 3) {  // refining done: save spec gains, prefill the sell step
+    for (const t in s.specAfter) if (s.specAfter[t] > s.spec[t]) S.spec[s.mat][t] = s.specAfter[t];
+    s.lines.forEach(l => { l.sold = l.made; l.price = price(itemId(l.t, l.e, rOut(s)), rSell(s, l), 'sell').v; });
+  }
+}
+const opts = (list, v) => list.map(x => `<option ${x == v ? 'selected' : ''}>${x}</option>`).join('');
+const cityOpts = (v, first) => `<option value="">${first}</option>` + CITIES.map(c => `<option ${c === v ? 'selected' : ''}>${c}</option>`).join('');
+
+function refineBody(s) {
+  const city = rCity(s), pct = (100 * rRate(s)).toFixed(1) + '%', mat = s.mat, out = rOut(s).toLowerCase();
+  const label = l => `T${l.t}.${l.e} ${out}`;
+  switch (s.step) {
+    case 0: {
+      const ests = s.lines.map(l => rEstimate(s, l)), total = ests.reduce((a, e, i) => a + (e.ok ? e.profit * s.lines[i].n : 0), 0);
+      return `<h2>What are we refining?</h2>
+        <div class="row">
+          <label>Material<select data-s="mat"><option value="leather" ${mat === 'leather' ? 'selected' : ''}>Leather</option><option value="cloth" ${mat === 'cloth' ? 'selected' : ''}>Cloth</option></select></label>
+          <label>Refine in<select data-s="city">${cityOpts(s.city, `Bonus city (${MATS[mat].bonus})`)}</select></label>
+        </div>
+        <div class="wrap"><table><tr><th>Tier</th><th>Enchant</th><th>Refines</th><th>Buy in</th><th>Sell in</th><th>Est. profit</th><th></th></tr>
+        ${s.lines.map((l, i) => `<tr><td><select data-s="lines.${i}.t">${opts(TIERS, l.t)}</select></td><td><select data-s="lines.${i}.e">${opts(ENCH, l.e)}</select></td>
+          <td><input type="number" min="1" data-s="lines.${i}.n" value="${l.n}"></td>
+          <td><select data-s="lines.${i}.bc">${cityOpts(l.bc, 'Refine city')}</select></td><td><select data-s="lines.${i}.sc">${cityOpts(l.sc, 'Refine city')}</select></td>
+          <td class="${ests[i].ok ? cls(ests[i].profit) : 'dim'}">${ests[i].ok ? fmt(ests[i].profit * l.n) : 'no price'}</td>
+          <td>${s.lines.length > 1 ? `<button class="ghost sm" data-sact="rdel:${i}">✕</button>` : ''}</td></tr>`).join('')}</table></div>
+        <div class="cards">${card('Return rate', pct)}${card('Expected profit', fmt(total), `class="${cls(total)}"`)}</div>
+        <div class="actions">${btn('abandon', 'Cancel', 1)}${btn('radd', '+ Add a tier', 1)}${btn('next', 'Start shopping →')}</div>`;
+    }
+    case 1: {
+      const all = s.shop.every(x => x.got);
+      return `<h2>Shopping list</h2>
+        <div class="wrap"><table><tr><th>Got</th><th>Item</th><th>Need</th><th>Price each</th><th>Subtotal</th></tr>
+        ${s.shop.map((x, i) => `<tr class="${x.got ? 'got' : ''}"><td><input type="checkbox" data-s="shop.${i}.got" ${x.got ? 'checked' : ''}></td>
+          <td>${icon(x.id, x.city)}${esc(x.name)}</td><td><input type="number" min="0" data-s="shop.${i}.need" value="${x.need}"></td>
+          <td><input type="number" min="0" data-s="shop.${i}.price" value="${x.price || ''}" placeholder="—"></td><td>${fmt(x.need * x.price)}</td></tr>`).join('')}
+        <tr><td></td><td>Station fees ${s.fees.length ? '(logged)' : '(estimate)'}</td><td></td><td></td><td>${fmt(sFee(s))}</td></tr>
+        <tr><td></td><td><b>Total</b></td><td></td><td></td><td><b>${fmt(sSpent(s))}</b></td></tr></table></div>
+        <p class="hint">Amounts already subtract your ${pct} return rate: keep refining the returned materials until they run out. Tick items off as you buy and correct prices to what you paid. Buy orders placed the night before are usually cheaper.</p>
+        <div class="actions">${btn('back', '← Back', 1)}${btn('next', all ? 'Got everything →' : 'Continue →')}</div>`;
+    }
+    case 2:
+      return `<h2>Travel to ${city}</h2>
+        <div class="cards">${card('Refine in', city)}${card('Return rate', pct)}${card('Bought', `${s.shop.filter(x => x.got).length} / ${s.shop.length}`)}</div>
+        <ul class="checks">
+          <li>${city === MATS[mat].bonus ? `✓ ${city} is the bonus city for ${out}` : `⚠ ${city} has no ${out} bonus. ${MATS[mat].bonus} returns more`}</li>
+          <li>Check today's refining bonus. If there is one, enter it under Settings → Daily bonus</li>
+          <li>Each refine run is charged separately: log every fee below</li>
+        </ul>
+        ${feeLog(s)}
+        <div class="actions">${btn('back', '← Back', 1)}${btn('next', "I'm at the station →")}</div>`;
+    case 3: {
+      const tiers = Object.keys(s.spec), gained = tiers.reduce((a, t) => a + Math.max(0, s.specAfter[t] - s.spec[t]), 0);
+      return `<h2>Refining ${mat}</h2>
+        ${s.lines.map((l, i) => `<div class="qcell" style="margin-bottom:8px;text-align:left">
+          <div class="row" style="justify-content:space-between"><b>${icon(itemId(l.t, l.e, rOut(s)))}${label(l)}</b><span class="dim">${l.made} / ${l.n}</span></div>
+          <div class="bar big" style="margin-top:6px"><div style="width:${Math.min(100, 100 * l.made / l.n)}%"></div></div>
+          <div class="counter"><button class="ghost" data-sact="radj:${i}:-10">−10</button><button class="ghost" data-sact="radj:${i}:-1">−</button>
+            <b class="${popQ === i ? 'pop' : ''}">${l.made}</b><button data-sact="radj:${i}:1">+</button><button data-sact="radj:${i}:10">+10</button>
+            <button class="ghost sm" data-sact="rall:${i}">All done</button></div></div>`).join('')}
+        <h3>Spec</h3>
+        <div class="row">${tiers.map(t => `<label>T${t} before → after<span class="row" style="gap:4px"><input type="number" class="spec" value="${s.spec[t]}" disabled>
+          <input type="number" min="0" class="spec" data-s="specAfter.${t}" value="${s.specAfter[t]}"></span></label>`).join('')}</div>
+        ${gained > 0 ? `<p class="pos pop">+${gained} spec level${gained > 1 ? 's' : ''} unlocked! 🎉</p>` : ''}
+        ${feeLog(s)}
+        <div class="actions">${btn('back', '← Back', 1)}${btn('next', 'Done refining →')}</div>`;
+    }
+    case 4: {
+      const p = sEarned(s) - sSpent(s);
+      return `<h2>Sell your ${out}</h2>
+        <div class="wrap"><table><tr><th>Item</th><th>Selling</th><th>Price each</th><th>You get (after ${S.sellMode === 'order' ? 'tax + setup' : 'tax'})</th></tr>
+        ${s.lines.map((l, i) => `<tr><td>${icon(itemId(l.t, l.e, rOut(s)), rSell(s, l))}${label(l)} <span class="dim">in ${rSell(s, l)}</span></td>
+          <td><input type="number" min="0" data-s="lines.${i}.sold" value="${l.sold}"></td>
+          <td><input type="number" min="0" data-s="lines.${i}.price" value="${l.price || ''}" placeholder="—"></td><td>${fmt(l.sold * l.price * sellMult())}</td></tr>`).join('')}</table></div>
+        <div class="cards">${card('Spent', fmt(sSpent(s)))}${card('Earned', fmt(sEarned(s)))}${card('Profit', fmt(p), `class="${cls(p)}"`)}</div>
+        <p class="hint">Prices are prefilled from the market. Change them to what you actually sold for. Keeping some to sell later? Lower "Selling" and log the rest in a later run.</p>
+        <div class="actions">${btn('back', '← Back', 1)}${btn('finish', 'Finish session 🎉')}</div>`;
+    }
+    default: {
+      const spent = sSpent(s), p = sEarned(s) - spent, mins = Math.round((s.finished - s.started) / 60000);
+      const gained = Object.keys(s.spec).reduce((a, t) => a + Math.max(0, s.specAfter[t] - s.spec[t]), 0);
+      return `<div class="done"><div class="trophy">${p >= 0 ? '🏆' : '🛠️'}</div><h2>${p >= 0 ? 'Refining run complete!' : 'Run complete. Not every run is a winner.'}</h2>
+        <div class="cards">${card('Profit', '0', `class="${cls(p)}" data-to="${Math.round(p)}"`)}${card('Return on spend', spent ? (100 * p / spent).toFixed(1) + '%' : '—')}
+          ${card('Time', mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`)}${card('Refined', s.lines.reduce((a, l) => a + l.made, 0))}</div>
+        <p>${s.lines.map(l => `${l.made}× ${label(l)}`).join(' · ')}${gained > 0 ? ` · <span class="pos">+${gained} spec</span>` : ''}</p>
+        <div class="actions" style="justify-content:center">${btn('back', '← Edit sales', 1)}${btn('abandon', 'Discard', 1)}${btn('save', 'Save to run log')}</div></div>`;
+    }
+  }
+}
 
 function sessionBody(s, g) {
   const city = g && sCity(s), pct = g && (100 * sRate(s)).toFixed(1) + '%', name = g && `${esc(g.n)} T${s.t}.${s.e}`;
@@ -1171,21 +1319,22 @@ document.addEventListener('click', ev => {
 function renderSession() {
   const el = document.getElementById('session'), s = S.session;
   if (!s) {
-    el.innerHTML = `<div class="hero ${lastStep !== -2 ? 'enter' : ''}"><div class="trophy">⚒️</div><h2>Ready to craft?</h2>
-      <p class="hint">A session walks you through it: pick the gear, buy materials and journals, travel, craft, log your qualities and spec, then sell. It's saved (and synced) the whole way, so you can close the app and come back.</p>
-      <div class="actions" style="justify-content:center">${btn('new', 'Start a crafting session').replace('<button', '<button class="big"')}</div></div>
+    el.innerHTML = `<div class="hero ${lastStep !== -2 ? 'enter' : ''}"><div class="trophy">⚒️</div><h2>Ready to craft or refine?</h2>
+      <p class="hint">A session walks you through it: pick what to make, buy the materials, travel, log every station fee, track what you made and your spec, then sell. It's saved (and synced) the whole way, so you can close the app and come back.</p>
+      <div class="actions" style="justify-content:center">${btn('new:craft', '⚒️ Start a crafting session').replace('<button', '<button class="big"')}${btn('new:refine', '🧵 Start a refining session').replace('<button', '<button class="big"')}</div></div>
       ${historyHtml()}`;
     lastStep = -2;
     return '';
   }
   const g = sg(), entering = s.step !== lastStep;
   lastStep = s.step;
-  el.innerHTML = `<div class="stepper">${STEPS.map((n, i) => `<div class="st ${i < s.step ? 'done' : i === s.step ? 'on' : ''}"><span>${i < s.step ? '✓' : i + 1}</span>${n}</div>`).join('')}</div>
+  el.innerHTML = `<div class="stepper">${(isRefine(s) ? R_STEPS : STEPS).map((n, i) => `<div class="st ${i < s.step ? 'done' : i === s.step ? 'on' : ''}"><span>${i < s.step ? '✓' : i + 1}</span>${n}</div>`).join('')}</div>
     <div class="bar"><div style="width:${100 * s.step / (STEPS.length - 1)}%"></div></div>
-    <div class="pane ${entering ? 'enter' : ''}">${sessionBody(s, g)}</div>`;
+    <div class="pane ${entering ? 'enter' : ''}">${isRefine(s) ? refineBody(s) : sessionBody(s, g)}</div>`;
   if (entering && s.step === 5) countUp(el);
   else el.querySelectorAll('[data-to]').forEach(b => b.textContent = fmt(+b.dataset.to));
   popQ = -1;
+  if (isRefine(s)) return `Refining session: ${s.mat} in ${rCity(s)}`;
   return g ? `Session: ${s.n}× ${g.n} T${s.t}.${s.e} in ${sCity(s)}` : '';
 }
 
