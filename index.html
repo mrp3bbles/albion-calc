@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Albion Profit Calc</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#14110d">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 :root{--bg:#14110d;--panel:#1f1a14;--line:#3a3127;--text:#e8dcc6;--dim:#9c8f7a;--gold:#d9a84e;--pos:#6fcf73;--neg:#e46a5a}
 *{box-sizing:border-box}
@@ -11,7 +16,7 @@ body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,san
 h1{font-size:20px;color:var(--gold);margin:0 0 12px}
 h3{margin:12px 0 6px;font-size:13px;color:var(--gold)}
 section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
-nav{display:flex;gap:6px;margin-bottom:12px}
+nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 nav button{background:var(--panel);color:var(--text);border:1px solid var(--line)}
 nav button.on{background:var(--gold);color:#1a1208}
 .row{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
@@ -35,13 +40,58 @@ td img{width:28px;height:28px;vertical-align:middle;margin-right:4px}
 .hint{color:var(--dim);font-size:12px;margin:6px 0 0}
 [hidden]{display:none!important}
 code{background:#0f0c09;padding:2px 5px;border-radius:4px;word-break:break-all}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px}
+td img[data-hist]{cursor:zoom-in}
+#histTitle img{width:36px;height:36px;vertical-align:middle;margin-right:6px}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;width:min(760px,calc(100vw - 32px));padding:16px}
+dialog::backdrop{background:#000b}
+dialog[open]{animation:pop .2s ease}
+.tip{position:absolute;pointer-events:none;background:#0f0c09;border:1px solid var(--line);padding:4px 8px;border-radius:4px;font-size:12px;white-space:nowrap}
+.chart svg{width:100%;height:auto;display:block;touch-action:pan-y}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:10px 0}
+.card{background:#0f0c09;border:1px solid var(--line);border-radius:8px;padding:10px}
+.card small{display:block;color:var(--dim);font-size:12px}.card b{font-size:20px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:14px}
+button.sm{padding:2px 8px}
+.tips li{margin:6px 0}
+/* crafting session */
+.stepper{display:flex;gap:4px;margin-bottom:8px}
+.st{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--dim);transition:color .4s}
+.st span{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--line);font-weight:700;transition:all .4s}
+.st.on{color:var(--gold)}.st.on span{border-color:var(--gold);box-shadow:0 0 0 4px #d9a84e33}
+.st.done span{background:var(--gold);border-color:var(--gold);color:#1a1208}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-bottom:14px}
+.bar div{height:100%;background:var(--gold);border-radius:3px;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.bar.big{height:12px;margin-bottom:4px}
+.pane h2{margin:4px 0 10px;font-size:18px}
+.enter{animation:slidein .4s cubic-bezier(.2,.8,.2,1)}
+.hero{text-align:center;padding:30px 10px}
+button.big{font-size:16px;padding:12px 22px;border-radius:8px}
+tr.got td{color:var(--dim)}tr.got td:nth-child(2){text-decoration:line-through}
+.qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:10px 0}
+.qcell{background:#0f0c09;border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
+.qcell small{color:var(--dim)}
+.q1{border-color:#8a8a8a}.q2{border-color:#6fa8dc}.q3{border-color:#b48ce0}.q4{border-color:var(--gold)}
+.counter{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:4px}
+.counter button{width:38px;height:38px;border-radius:50%;font-size:20px;padding:0}
+.counter b{font-size:22px;min-width:36px;display:inline-block}
+.pop{animation:pop .25s ease}
+.checks li{margin:4px 0}
+.done{text-align:center}
+.trophy{font-size:56px;animation:bounce 1s ease}
+.confetti{position:fixed;top:-12px;width:8px;height:12px;border-radius:2px;z-index:99;pointer-events:none;animation:fall 2s ease-in forwards}
+@keyframes slidein{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.85)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
+@keyframes bounce{0%{transform:scale(0) rotate(-20deg)}60%{transform:scale(1.2) rotate(8deg)}100%{transform:scale(1)}}
+@keyframes fall{to{transform:translateY(106vh) rotate(var(--r));opacity:.85}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
-<h1>Albion Profit Calc · EU</h1>
-<nav><button data-tab="refine">Refining</button><button data-tab="craft">Crafting</button><button data-tab="settings">Settings &amp; sync</button></nav>
+<header><h1>Albion Profit Calc · EU</h1><button id="install" hidden>Install app</button></header>
+<nav><button data-tab="refine">Refining</button><button data-tab="craft">Crafting</button><button data-tab="session">Craft session</button><button data-tab="flip">BM flip</button><button data-tab="log">Run log</button><button data-tab="tips">Tips</button><button data-tab="settings">Settings &amp; sync</button></nav>
 
-<section>
+<section id="topbar">
   <div class="row">
     <label>Buy via<select data-k="buyMode"><option value="instant">Instant buy</option><option value="order">Buy order</option></select></label>
     <label>Sell via<select data-k="sellMode"><option value="order">Sell order</option><option value="instant">Instant sell</option></select></label>
@@ -67,7 +117,7 @@ code{background:#0f0c09;padding:2px 5px;border-radius:4px;word-break:break-all}
     </div>
   </section>
   <section class="wrap"><table id="tbl"></table>
-    <p class="hint">Price cells are editable. Type what you see in-game to override stale data (Refresh clears overrides). Prices older than 24h are red.</p>
+    <p class="hint">Price cells are editable. Type what you see in-game to override stale data (Refresh clears overrides). Prices older than 24h are red. Tap an item's icon for its price history.</p>
   </section>
   <section>
     <h3>Daily run planner</h3>
@@ -101,6 +151,87 @@ code{background:#0f0c09;padding:2px 5px;border-radius:4px;word-break:break-all}
     <p class="hint">Spec is per item and saved. It lowers focus cost; set quality odds in Settings if you want it to count toward sell value. Artifacts and tokens are never returned. Material prices are editable.</p>
   </section>
 </div>
+
+<div data-page="session"><section id="session"></section></div>
+
+<div data-page="flip">
+  <section>
+    <div class="row">
+      <label>Tier<select data-k="fTier"><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+      <label>Enchant<select data-k="fEnch"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+      <label>Quality<select data-k="fQual"><option value="0">All</option><option value="1">Normal</option><option value="2">Good</option><option value="3">Outstanding</option><option value="4">Excellent</option><option value="5">Masterpiece</option></select></label>
+      <label>Buy in<select data-k="fBuy" class="cities"><option value="">Best city</option></select></label>
+      <button id="flipScan">Scan Black Market</button>
+    </div>
+    <p class="hint">Buys gear at the lowest sell order and sells it instantly into the Black Market's best buy order in Caerleon (sales tax applies, no setup fee). Caerleon is ringed by red zones, so anything bought elsewhere has to survive the trip.</p>
+  </section>
+  <section class="wrap"><table id="ftbl"></table></section>
+</div>
+
+<div data-page="log">
+  <section>
+    <h3>Add a run</h3>
+    <div class="row">
+      <label>Date<input type="date" id="logDate"></label>
+      <label>Type<select id="logKind"><option>refine</option><option>craft</option><option>flip</option><option>gather</option><option>other</option></select></label>
+      <label>What<input id="logTitle" placeholder="T4.2 leather, Thetford → Martlock" style="width:230px"></label>
+      <label>Spent<input type="number" id="logSpent" style="width:110px"></label>
+      <label>Earned<input type="number" id="logEarned" style="width:110px"></label>
+      <button id="logAdd">Add</button>
+    </div>
+    <p class="hint">Earned = silver you actually received after tax. The log syncs across devices along with your settings.</p>
+  </section>
+  <section><div id="logStats"></div><div id="logChart" class="chart"></div></section>
+  <section class="wrap"><table id="logTbl"></table></section>
+</div>
+
+<div data-page="tips">
+  <section class="tips">
+    <h3>Make more silver</h3>
+    <ul>
+      <li><b>Buy orders beat instant buy.</b> Place buy orders for hide and fiber at night and refine the next day. That's often the whole difference between a loss and a profit. Switch "Buy via" to Buy order to see it.</li>
+      <li><b>Refine in the bonus city.</b> Leather in Martlock and cloth in Lymhurst return 36.7% of materials instead of 15.2%.</li>
+      <li><b>Daily bonuses.</b> When the game shows a +10% or +20% refining or crafting bonus, enter it under Settings → Daily bonus. It noticeably raises your return rate.</li>
+      <li><b>Don't flood the market.</b> Selling 500 of something that sells 100 a day crashes the price. The planner caps each item at a share of daily sales; spread big batches across days or cities.</li>
+      <li><b>Check for spikes before you commit.</b> Tap any item's icon to see 30 days of prices. If today is a spike, the profit won't last until your sell orders fill.</li>
+      <li><b>Journals are extra profit.</b> Fill a crafting journal while you craft and sell it full. Add journals in a craft session and they count toward profit.</li>
+    </ul>
+    <h3>Keep the numbers honest</h3>
+    <ul>
+      <li><b>Keep the Albion Data Client running</b> while you play. Every market you open gets uploaded, so the cities you trade in get fresh prices, for everyone.</li>
+      <li><b>Watch the Age column.</b> Red or "no data" means a guess. Open that market in-game (the data client uploads it), hit Refresh, or type the price into the cell.</li>
+      <li><b>Max price age</b> (top bar) hides stale prices, so scans don't chase a week-old listing.</li>
+      <li><b>Check the station fee once</b> and enter it under Settings. The station shows it before you craft.</li>
+      <li><b>Log every run.</b> Expected profit and real profit are different things. After a week, the Run log shows which runs are worth your evening.</li>
+    </ul>
+    <h3>Spec &amp; focus</h3>
+    <ul>
+      <li>Without focus, refining spec doesn't change profit; it only makes focus cheaper later. Level it anyway, since refining gives the XP.</li>
+      <li>Once you have premium, turn on Focus and sort by Silver/focus. Spend focus where each point earns the most, and refine T4 to push your spec.</li>
+      <li>Crafting spec raises your odds of better quality. After a few craft sessions you'll know your real odds; enter them under Settings → quality odds.</li>
+    </ul>
+    <h3>Safety</h3>
+    <ul>
+      <li>Don't carry more through red or black zones than you can afford to lose. Black Market flips end in Caerleon, so they carry that risk.</li>
+      <li>Your sync link works like a password: anyone who has it can edit your settings and log.</li>
+    </ul>
+    <h3>Use it like an app</h3>
+    <ul>
+      <li><b>Android / Chrome:</b> tap "Install app" at the top, or browser menu → Install app / Add to Home screen.</li>
+      <li><b>iPhone:</b> Safari → Share → Add to Home Screen.</li>
+      <li>Once installed it opens full-screen, and after your first visit it still loads offline (prices need internet).</li>
+    </ul>
+  </section>
+</div>
+
+<dialog id="hist">
+  <header><h3 id="histTitle" style="margin:0"></h3><button class="ghost" id="histClose">Close</button></header>
+  <div class="row" style="margin:8px 0">
+    <label>City<select id="histCity" class="cities bm"></select></label>
+    <label>Range<select id="histDays"><option value="7">7 days</option><option value="30" selected>30 days</option></select></label>
+  </div>
+  <div id="histBody"></div>
+</dialog>
 
 <div data-page="settings">
   <section>
@@ -173,7 +304,9 @@ const DEFAULTS = {
   fcePerLevel: 250, fceItem: 250, fceTree: 30,
   odds: [100, 0, 0, 0, 0], maxAge: 72,
   budget: 1000000, planShare: 20, shopAround: false,
-  sort: { refine: { k: 'item', d: 1 }, craft: { k: 'profit', d: -1 } },
+  sort: { refine: { k: 'item', d: 1 }, craft: { k: 'profit', d: -1 }, flip: { k: 'profit', d: -1 } },
+  fTier: '4', fEnch: '0', fQual: '0', fBuy: '',
+  log: [], session: null,
   rShow: { 4: true, 5: true, 6: true, 7: true, 8: true },
   craftCity: CRAFT_CITY,
   spec: { leather: { 4: 24, 5: 14, 6: 3, 7: 0, 8: 0 }, cloth: { 4: 23, 5: 14, 6: 1, 7: 0, 8: 0 } },
@@ -181,7 +314,7 @@ const DEFAULTS = {
 };
 
 let S = structuredClone(DEFAULTS);
-const load = obj => { S = { ...structuredClone(DEFAULTS), ...obj, craftCity: { ...CRAFT_CITY, ...obj?.craftCity } }; };
+const load = obj => { S = { ...structuredClone(DEFAULTS), ...obj, craftCity: { ...CRAFT_CITY, ...obj?.craftCity }, sort: { ...DEFAULTS.sort, ...obj?.sort } }; };
 try { load(JSON.parse(localStorage.getItem('albionCalc') || '{}')); } catch {}
 
 let D = { gear: [], ref: {} };  // data.json
@@ -254,14 +387,18 @@ const sellMult = () => 1 - tax() / 100 - (S.sellMode === 'order' ? S.setup / 100
 const stationFee = value => value * S.nutrition * S.stationFee / 100;
 const focusMult = fce => 0.5 ** (fce / 10000);
 
+// API row field -> its Date, or null when missing or older than Max price age
+function fresh(row, field) {
+  const d = row?.[field] ? new Date(row[field + '_date'] + 'Z') : null;
+  return d && !(S.maxAge && Date.now() - d > S.maxAge * 36e5) ? d : null;
+}
 function price(item, city, side, q = 1) {
   // buying: instant = lowest sell order, order = highest buy order. Selling is the reverse
   const field = (side === 'buy') === (S[side + 'Mode'] === 'instant') ? 'sell_price_min' : 'buy_price_max';
   const key = `${item}|${city}|${field}`, row = P[`${item}|${city}|${q}`];
   if (q === 1 && key in O) return { key, v: O[key], d: new Date() };
-  const d = row?.[field] ? new Date(row[field + '_date'] + 'Z') : null;
-  if (!d || (S.maxAge && Date.now() - d > S.maxAge * 36e5)) return { key, v: 0, d: null };  // too old to trust
-  return { key, v: row[field], d };
+  const d = fresh(row, field);
+  return d ? { key, v: row[field], d } : { key, v: 0, d: null };
 }
 
 const fmt = x => Math.round(x).toLocaleString();
@@ -273,7 +410,9 @@ const ageText = ds => {
   return `<span class="${h > 24 ? 'neg' : 'dim'}">${h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd'}</span>`;
 };
 const priceInput = (p, title = '') => `<input type="number" data-o="${p.key}" value="${p.v || ''}" placeholder="—" title="${title}">`;
-const icon = id => `<img src="https://render.albiononline.com/v1/item/${id}.png?size=56" alt="" loading="lazy">`;
+const icon = (id, city = '') => `<img data-hist="${id}" data-city="${city}" src="https://render.albiononline.com/v1/item/${id}.png?size=56" alt="" loading="lazy">`;
+const short = v => Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(1) + 'm' : Math.abs(v) >= 1e3 ? (v / 1e3).toFixed(1) + 'k' : String(Math.round(v));
+const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const oldest = ds => ds.every(Boolean) ? Math.min(...ds) : 0;
 const cmp = (x, y) => typeof x === 'string' ? x.localeCompare(y) : x - y;
 const SORT_KEYS = {
@@ -320,7 +459,7 @@ function renderRefine() {
     rows.map(c => {
       const fc = c.focus;
       const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcRefine(c.t, c.e, false).profit) / fc).toFixed(1) : '—'}</td>` : '';
-      return `<tr><td>${icon(itemId(c.t, c.e, MATS[S.mat].out))}T${c.t}.${c.e}</td>` +
+      return `<tr><td>${icon(itemId(c.t, c.e, MATS[S.mat].out), sellCity())}T${c.t}.${c.e}</td>` +
         `<td>${priceInput(c.raw)}</td><td>${priceInput(c.prev)}</td><td>${priceInput(c.out)}</td>` +
         (c.ok ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td>` + profitCells(c.profit, c.cost + c.fee, q) : '<td colspan="5" class="dim">missing price</td>') +
         `<td class="dim">${Math.ceil(q * c.n * (1 - c.r))} raw + ${Math.ceil(q * (1 - c.r))} T${c.t - 1}</td><td class="dim">${fmt(fc)}</td>${spf}<td>${ageText([c.raw.d, c.prev.d, c.out.d])}</td></tr>`;
@@ -394,7 +533,7 @@ async function makePlan() {
   out.innerHTML = `
     <div class="wrap"><table>
       <tr><th>Item</th><th>Crafts</th><th>Buy in</th><th>Sell in</th><th>Sales/day</th><th>Spend</th><th>Profit</th><th>Margin</th></tr>
-      ${picks.map(c => `<tr><td>${icon(c.outId)}T${c.t}.${c.e}</td><td>${c.n}</td><td>${c.bc}</td><td>${c.sc}</td>
+      ${picks.map(c => `<tr><td>${icon(c.outId, c.sc)}T${c.t}.${c.e}</td><td>${c.n}</td><td>${c.bc}</td><td>${c.sc}</td>
         <td class="dim">${Math.round(V[`${c.outId}|${c.sc}`])}</td><td>${fmt(c.n * c.spend)}</td><td class="pos">${fmt(c.n * c.profit)}</td>
         <td class="pos">${(100 * c.profit / c.spend).toFixed(1)}%</td></tr>`).join('')}
       <tr><td><b>Total</b></td><td></td><td></td><td></td><td></td><td><b>${fmt(spend)}</b></td><td class="pos"><b>${fmt(profit)}</b></td><td class="pos"><b>${(100 * profit / spend).toFixed(1)}%</b></td></tr>
@@ -405,6 +544,7 @@ async function makePlan() {
       <li>Refine everything in <b>${refineCity()}</b>, ${(100 * picks[0].r).toFixed(1)}% return rate. Keep refining the returned materials until they run out.</li>
       ${byCity('sc', c => `${c.n}× T${c.t}.${c.e} ${m.out.toLowerCase()}`).replace(/<li>/g, `<li>Sell (${mode('sell')}) in `)}
     </ol>
+    <div class="actions"><button class="ghost" id="planLog" data-title="${S.mat} T${picks.map(c => c.t + '.' + c.e).join(', ')}" data-spent="${Math.round(spend)}" data-earned="${Math.round(spend + profit)}">Log this run</button></div>
     <p class="hint">Buy amounts already subtract what returns give back, so you buy less than crafts × recipe. Spend includes the station fee${S.buyMode === 'order' ? ' and buy-order setup fees' : ''}. ${budgetLeftNote(S.budget - spend)}</p>`;
 }
 const budgetLeftNote = left => left > 0.1 * S.budget ? `${fmt(left)} silver left unspent: sales volume capped the plan.` : '';
@@ -448,7 +588,7 @@ function renderCraft() {
     rows.map(c => {
       const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcCraft(c, false).profit) / c.focus).toFixed(1) : '—'}</td>` : '';
       const mats = c.mats.map(m => `<span title="${m.n}× ${m.id}">${m.n}×${priceInput(m.p, m.id)}</span>`).join('');
-      return `<tr><td>${icon(gearId(c.g, c.t, c.e))}${c.g.n} <span class="dim">T${c.t}.${c.e}${scan ? ' · ' + c.city : ''}</span></td>` +
+      return `<tr><td>${icon(gearId(c.g, c.t, c.e), S.cSellCity || c.city)}${c.g.n} <span class="dim">T${c.t}.${c.e}${scan ? ' · ' + c.city : ''}</span></td>` +
         `<td><input type="number" class="spec" min="0" max="120" data-spec="${c.g.id}" value="${spec(c.g)}"></td>` +
         `<td><div class="mats">${mats}</div></td><td>${priceInput(c.sell)}</td>` +
         (c.ok ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td>` + profitCells(c.profit, c.cost + c.fee, q) : '<td colspan="5" class="dim">missing price</td>') +
@@ -487,6 +627,9 @@ function refineIds() {
 }
 async function refresh(clearOverrides) {
   if (clearOverrides) O = {};
+  if (S.tab === 'flip') return flipLoaded ? scanFlip() : renderAll();
+  if (S.tab === 'session') return sessionPrices();
+  if (!['refine', 'craft'].includes(S.tab)) return renderAll();
   statusMsg = 'loading prices…'; renderAll();
   try {
     if (S.tab === 'craft') {
@@ -509,11 +652,414 @@ async function refresh(clearOverrides) {
   renderAll();
 }
 
+// ---------- charts ----------
+// One series per chart (no dual axes): a line, or bars from zero. Hover shows a crosshair + tooltip.
+function chart(el, pts, { bars = false, ref = null, refLabel = '', fmtY = short, h = 180, tip }) {
+  const W = 640, H = h, L = 52, R = 12, T = 12, B = 22;
+  const x0 = +pts[0].x, x1 = +pts[pts.length - 1].x;
+  const ys = pts.map(p => p.y).concat(ref ?? []);
+  let lo = bars ? 0 : Math.min(...ys), hi = Math.max(...ys);
+  if (hi === lo) hi = lo + 1;
+  if (!bars) { const pad = (hi - lo) * 0.1; lo -= pad; hi += pad; }
+  const X = x => L + (W - L - R) * (x1 === x0 ? 0.5 : (+x - x0) / (x1 - x0));
+  const Y = y => T + (H - T - B) * (1 - (y - lo) / (hi - lo));
+  const grid = [0, 1, 2, 3].map(i => lo + (hi - lo) * i / 3).map(v =>
+    `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end" fill="var(--dim)" font-size="11">${fmtY(v)}</text>`).join('');
+  const day = d => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const xl = `<text x="${L}" y="${H - 5}" fill="var(--dim)" font-size="11">${day(pts[0].x)}</text><text x="${W - R}" y="${H - 5}" text-anchor="end" fill="var(--dim)" font-size="11">${day(pts[pts.length - 1].x)}</text>`;
+  const bw = Math.max(2, (W - L - R) / pts.length - 2);
+  const marks = bars
+    ? pts.map(p => `<rect x="${X(p.x) - bw / 2}" y="${Y(p.y)}" width="${bw}" height="${Math.max(1, Y(0) - Y(p.y))}" rx="2" fill="var(--gold)" opacity=".6"/>`).join('')
+    : `<path d="${pts.map((p, i) => (i ? 'L' : 'M') + X(p.x).toFixed(1) + ',' + Y(p.y).toFixed(1)).join('')}" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round"/>`;
+  const refLine = ref == null ? '' : `<line x1="${L}" x2="${W - R}" y1="${Y(ref)}" y2="${Y(ref)}" stroke="var(--text)" stroke-dasharray="4 4" opacity=".55"/><text x="${W - R}" y="${Y(ref) - 5}" text-anchor="end" fill="var(--text)" font-size="11">${refLabel}</text>`;
+  el.innerHTML = `<div style="position:relative"><svg viewBox="0 0 ${W} ${H}">${grid}${xl}${marks}${refLine}
+    <line class="xh" y1="${T}" y2="${H - B}" stroke="var(--dim)" visibility="hidden"/>
+    <circle class="dot" r="5" fill="var(--gold)" stroke="var(--panel)" stroke-width="2" visibility="hidden"/>
+    <rect x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg><div class="tip" hidden></div></div>`;
+  const svg = el.querySelector('svg'), xh = svg.querySelector('.xh'), dot = svg.querySelector('.dot'), tipEl = el.querySelector('.tip');
+  svg.onpointermove = ev => {
+    const r = svg.getBoundingClientRect(), mx = (ev.clientX - r.left) * W / r.width;
+    const p = pts.reduce((a, b) => Math.abs(X(b.x) - mx) < Math.abs(X(a.x) - mx) ? b : a);
+    xh.setAttribute('x1', X(p.x)); xh.setAttribute('x2', X(p.x)); xh.setAttribute('visibility', 'visible');
+    dot.setAttribute('cx', X(p.x)); dot.setAttribute('cy', Y(p.y)); dot.setAttribute('visibility', bars ? 'hidden' : 'visible');
+    tipEl.hidden = false; tipEl.innerHTML = tip(p);
+    tipEl.style.left = Math.max(0, Math.min(X(p.x) * r.width / W + 10, r.width - tipEl.offsetWidth)) + 'px';
+    tipEl.style.top = '0';
+  };
+  svg.onpointerleave = () => { xh.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); tipEl.hidden = true; };
+}
+
+// ---------- price history ----------
+function itemName(id) {
+  const [base, e = 0] = id.split('@'), m = base.match(/^T(\d)_(.+?)(?:_LEVEL\d)?$/);
+  if (!m) return id;
+  const g = D.gear.find(x => x.id === m[2]);
+  return `${g ? g.n : m[2].toLowerCase().replace(/_/g, ' ')} T${m[1]}.${e}`;
+}
+function openHistory(id, city) {
+  const dlg = document.getElementById('hist');
+  dlg.dataset.id = id;
+  document.getElementById('histCity').value = city || 'Martlock';
+  document.getElementById('histTitle').innerHTML = `${icon(id)} ${esc(itemName(id))}`;
+  dlg.showModal();
+  loadHistory();
+}
+async function loadHistory() {
+  const id = document.getElementById('hist').dataset.id, city = document.getElementById('histCity').value;
+  const days = +document.getElementById('histDays').value, out = document.getElementById('histBody');
+  out.innerHTML = '<p class="hint">Loading history…</p>';
+  try {
+    const from = new Date(Date.now() - days * 864e5);
+    const res = await fetch(`${HISTORY_API}${id}.json?time-scale=${days > 7 ? 24 : 6}&date=${from.toISOString().slice(0, 10)}&qualities=1&locations=${encodeURIComponent(city)}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const h = (await res.json())[0];
+    const pts = (h?.data || []).map(d => ({ x: new Date(d.timestamp + 'Z'), y: d.avg_price, v: d.item_count })).filter(p => p.x >= from && p.y > 0);
+    if (pts.length < 2) { out.innerHTML = `<p class="hint">Not enough sales history for this item in ${city}. Try another city.</p>`; return; }
+    const sorted = pts.map(p => p.y).sort((a, b) => a - b), median = sorted[sorted.length >> 1];
+    const listed = P[`${id}|${city}|1`], now = fresh(listed, 'sell_price_min') ? listed.sell_price_min : pts[pts.length - 1].y;
+    const diff = (now - median) / median;
+    const verdict = diff > 0.15 ? `<b class="neg">Spike</b>: ${Math.round(diff * 100)}% above normal`
+      : diff < -0.15 ? `<b class="pos">Below normal</b>: ${Math.round(-diff * 100)}% under. A good time to buy, a bad time to sell`
+      : '<b>Normal</b>: within 15% of usual';
+    out.innerHTML = `<div class="cards"><div class="card"><small>Now</small><b>${fmt(now)}</b></div><div class="card"><small>Normal (median)</small><b>${fmt(median)}</b></div><div class="card"><small>Sold per day</small><b>${fmt(pts.reduce((a, p) => a + p.v, 0) / days)}</b></div></div>
+      <p>${verdict}</p>
+      <h3>Average sale price</h3><div id="histPrice" class="chart"></div>
+      <h3>Units sold</h3><div id="histVol" class="chart"></div>
+      <p class="hint">"Now" is the cheapest listed sell order, or the latest average when nothing is listed.</p>`;
+    const when = p => p.x.toLocaleString(undefined, days > 7 ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', hour: '2-digit' });
+    chart(document.getElementById('histPrice'), pts, { ref: now, refLabel: 'now ' + short(now), tip: p => `${when(p)}<br>avg <b>${fmt(p.y)}</b> · ${fmt(p.v)} sold` });
+    chart(document.getElementById('histVol'), pts.map(p => ({ ...p, y: p.v })), { bars: true, h: 100, tip: p => `${when(p)}<br><b>${fmt(p.v)}</b> sold` });
+  } catch (err) { out.innerHTML = `<p class="hint neg">Couldn't load history (${err.message}).</p>`; }
+}
+
+// ---------- black market flipping ----------
+let flipLoaded = null;
+const flipIds = () => D.gear.filter(g => g.t.includes(+S.fTier) && g.f[S.fTier][S.fEnch] != null).map(g => gearId(g, +S.fTier, +S.fEnch));
+const flipBuyCities = () => S.fBuy ? [S.fBuy] : CITIES.slice(0, 6);  // royal cities + Caerleon
+async function scanFlip() {
+  const qs = S.fQual === '0' ? '1,2,3,4,5' : S.fQual;
+  statusMsg = ''; renderAll();
+  try {
+    await fetchPrices(flipIds(), qs, [...flipBuyCities(), 'Black Market'], 'gear');
+    flipLoaded = { qs };
+    statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
+  } catch (err) { statusMsg = 'price fetch failed (' + err.message + ')'; }
+  renderAll();
+}
+function renderFlip() {
+  const tbl = document.getElementById('ftbl');
+  if (!flipLoaded) { tbl.innerHTML = '<tr><td class="dim">Pick a tier and enchant, then Scan Black Market.</td></tr>'; return ''; }
+  const rows = [];
+  for (const id of flipIds()) for (const q of flipLoaded.qs.split(',').map(Number)) {
+    const bm = P[`${id}|Black Market|${q}`], bmD = fresh(bm, 'buy_price_max');
+    if (!bmD) continue;
+    let best = null;
+    for (const city of flipBuyCities()) {
+      const r = P[`${id}|${city}|${q}`], d = fresh(r, 'sell_price_min');
+      if (d && (!best || r.sell_price_min < best.v)) best = { city, v: r.sell_price_min, d };
+    }
+    if (!best) continue;
+    const profit = bm.buy_price_max * (1 - tax() / 100) - best.v;
+    rows.push({ id, q, city: best.city, cost: best.v, fee: 0, bm: bm.buy_price_max, profit, ok: true, focus: 0, age: Math.min(best.d, bmD), dates: [best.d, bmD] });
+  }
+  const shown = sortRows(rows, 'flip', c => c.id + c.q).slice(0, 200), h = (l, k) => th('flip', l, k);
+  tbl.innerHTML = `<tr>${h('Item', 'item')}<th>Quality</th><th>Buy in</th>${h('Buy for', 'cost')}<th>BM pays</th>${h('Profit', 'profit')}${h('Margin', 'margin')}${h('Age', 'age')}</tr>` +
+    shown.map(c => `<tr><td>${icon(c.id, 'Black Market')}${esc(itemName(c.id))}</td><td>${QUALITIES[c.q - 1]}</td><td>${c.city}</td><td>${fmt(c.cost)}</td><td>${fmt(c.bm)}</td>
+      <td class="${cls(c.profit)}">${fmt(c.profit)}</td><td class="${cls(c.profit)}">${(100 * c.profit / c.cost).toFixed(1)}%</td><td>${ageText(c.dates)}</td></tr>`).join('')
+    || '<tr><td class="dim">No item has both a Black Market order and a seller right now. Try another tier, or raise Max price age.</td></tr>';
+  return `${rows.filter(c => c.profit > 0).length} profitable flips of ${rows.length} with prices · BM sale is taxed`;
+}
+
+// ---------- run log ----------
+const today = () => new Date().toLocaleDateString('en-CA');  // YYYY-MM-DD in local time
+function addLog(entry) { S.log.push({ id: crypto.randomUUID().slice(0, 8), date: today(), ...entry }); }
+function cumulative(log) {
+  let sum = 0;
+  return [...log].sort((a, b) => cmp(a.date, b.date)).map(e => ({ x: new Date(e.date + 'T12:00'), y: sum += e.earned - e.spent, e }));
+}
+function renderLog() {
+  if (!document.getElementById('logDate').value) document.getElementById('logDate').value = today();
+  const L = [...S.log].sort((a, b) => cmp(b.date, a.date)), profit = e => e.earned - e.spent;
+  const total = L.reduce((a, e) => a + profit(e), 0), spent = L.reduce((a, e) => a + e.spent, 0);
+  const best = L.reduce((a, e) => !a || profit(e) > profit(a) ? e : a, null);
+  document.getElementById('logStats').innerHTML = L.length ? `<div class="cards">
+    <div class="card"><small>Total profit</small><b class="${cls(total)}">${fmt(total)}</b></div>
+    <div class="card"><small>Runs</small><b>${L.length}</b></div>
+    <div class="card"><small>Return on spend</small><b class="${cls(total)}">${spent ? (100 * total / spent).toFixed(1) + '%' : '—'}</b></div>
+    <div class="card"><small>Best run</small><b class="pos">${fmt(profit(best))}</b><small>${esc(best.title || best.kind)}</small></div></div>` : '<p class="hint">No runs yet. Add one above, or use "Log this run" in the planner or a craft session.</p>';
+  const chartEl = document.getElementById('logChart');
+  if (L.length >= 2) chart(chartEl, cumulative(L), { ref: 0, refLabel: 'break-even', tip: p => `${p.e.date} · ${esc(p.e.title || p.e.kind)}<br>run ${fmt(profit(p.e))} · total <b>${fmt(p.y)}</b>` });
+  else chartEl.innerHTML = '';
+  document.getElementById('logTbl').innerHTML = L.length ? `<tr><th>Date</th><th>Type</th><th>What</th><th>Spent</th><th>Earned</th><th>Profit</th><th>Margin</th><th></th></tr>` +
+    L.map(e => `<tr><td>${e.date}</td><td>${e.kind}</td><td style="text-align:left">${esc(e.title || '')}</td><td>${fmt(e.spent)}</td><td>${fmt(e.earned)}</td>
+      <td class="${cls(profit(e))}">${fmt(profit(e))}</td><td class="${cls(profit(e))}">${e.spent ? (100 * profit(e) / e.spent).toFixed(1) + '%' : '—'}</td>
+      <td><button class="ghost sm" data-logdel="${e.id}" title="Delete">✕</button></td></tr>`).join('') : '';
+  return L.length ? `${L.length} runs logged` : '';
+}
+
+// ---------- crafting session ----------
+const STEPS = ['Choose', 'Shop', 'Travel', 'Craft', 'Sell', 'Done'];
+const JOURNAL = {
+  sword: 'WARRIOR', axe: 'WARRIOR', mace: 'WARRIOR', hammer: 'WARRIOR', crossbow: 'WARRIOR', knuckles: 'WARRIOR', shieldtype: 'WARRIOR',
+  plate_armor: 'WARRIOR', plate_helmet: 'WARRIOR', plate_shoes: 'WARRIOR',
+  bow: 'HUNTER', spear: 'HUNTER', naturestaff: 'HUNTER', dagger: 'HUNTER', quarterstaff: 'HUNTER', shapeshifterstaff: 'HUNTER', torchtype: 'HUNTER',
+  leather_armor: 'HUNTER', leather_helmet: 'HUNTER', leather_shoes: 'HUNTER',
+  firestaff: 'MAGE', holystaff: 'MAGE', arcanestaff: 'MAGE', froststaff: 'MAGE', cursestaff: 'MAGE', booktype: 'MAGE',
+  cloth_armor: 'MAGE', cloth_helmet: 'MAGE', cloth_shoes: 'MAGE',
+};
+const journalType = g => JOURNAL[g.c] || JOURNAL[g.cc] || 'TOOLMAKER';
+const sg = () => D.gear.find(g => g.id === S.session?.gid);
+const sCity = s => s.city || S.craftCity[sg().cc] || 'Caerleon';
+const sRate = s => rrr(S.baseBonus + (S.craftCity[sg().cc] === sCity(s) ? S.craftBonus : 0) + (S.useFocus ? S.focusBonus : 0) + S.dailyBonus);
+const jId = (s, kind) => `T${s.t}_JOURNAL_${journalType(sg())}_${kind}`;
+// journals trade thinly: fall back to the best price in any city
+const anyCity = (id, side) => { const v = CITIES.map(c => price(id, c, side).v).filter(Boolean); return v.length ? (side === 'buy' ? Math.min(...v) : Math.max(...v)) : 0; };
+const sSpent = s => s.shop.reduce((a, x) => a + x.need * x.price, 0) + (+s.fee || 0);
+const sEarned = s => (s.sellN.reduce((a, n, q) => a + n * s.sell[q], 0) + s.jFull * s.jPrice) * sellMult();
+let lastStep = -1, popQ = -1;
+
+function newSession() {
+  S.session = { step: 0, gid: '', t: 4, e: 0, n: 10, city: '', journals: 0, shop: [], fee: 0, crafted: [0, 0, 0, 0, 0],
+    specBefore: 0, specAfter: 0, jFull: 0, sell: [0, 0, 0, 0, 0], sellN: [0, 0, 0, 0, 0], jPrice: 0, started: 0, finished: 0 };
+}
+function buildShop(s) {
+  const g = sg(), r = sRate(s), city = sCity(s);
+  s.shop = g.r[s.t].map(([tmpl, n, ret]) => {
+    const id = resId(tmpl, s.e);
+    return { id, name: itemName(id), need: Math.ceil(s.n * n * (ret ? 1 - r : 1)), price: price(id, city, 'buy').v, got: false };
+  });
+  if (s.journals) s.shop.push({ id: jId(s, 'EMPTY'), name: 'Empty journal', need: s.journals, price: price(jId(s, 'EMPTY'), city, 'buy').v || anyCity(jId(s, 'EMPTY'), 'buy'), got: false });
+  s.fee = Math.round(stationFee(g.v[s.t][s.e]) * s.n);
+  s.specBefore = s.specAfter = S.craftSpec[g.id] || 0;
+}
+async function sessionPrices() {
+  const s = S.session, g = s && sg();
+  renderAll();
+  if (!g) return;
+  const city = sCity(s);
+  try {
+    await fetchPrices(g.r[s.t].map(([tmpl]) => resId(tmpl, s.e)), '1', [city], 'prices');
+    await fetchPrices([jId(s, 'EMPTY'), jId(s, 'FULL')], '1', CITIES, 'journals');
+    await fetchPrices([gearId(g, s.t, s.e)], '1,2,3,4,5', [city], 'gear');
+    statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
+  } catch (err) { statusMsg = 'price fetch failed (' + err.message + ')'; }
+  renderAll();
+}
+function sessionInput(el) {
+  const s = S.session, path = el.dataset.s;
+  if (path === 'item') {
+    const g = D.gear.find(x => x.n.toLowerCase() === el.value.trim().toLowerCase());
+    if (!g) return;
+    Object.assign(s, { gid: g.id, t: g.t[0], e: 0 });
+    save(); return sessionPrices();
+  }
+  const keys = path.split('.'), last = keys.pop(), obj = keys.reduce((a, k) => a[k], s);
+  obj[last] = el.type === 'checkbox' ? el.checked : typeof obj[last] === 'number' ? +el.value || 0 : el.value;
+  if (path === 't' && sg().f[s.t][s.e] == null) s.e = 0;
+  save();
+  ['t', 'e', 'city'].includes(path) ? sessionPrices() : renderAll();
+}
+function sessionAction(action) {
+  const s = S.session, [act, arg] = action.split(':');
+  if (act === 'new') newSession();
+  else if (act === 'abandon') { if (!confirm('Discard this crafting session?')) return; S.session = null; }
+  else if (act === 'back') s.step--;
+  else if (act === 'next') {
+    if (s.step === 0) { buildShop(s); s.started = Date.now(); }
+    if (s.step === 3) {  // crafting done: save the new spec, prefill the sell step
+      if (s.specAfter > s.specBefore) S.craftSpec[s.gid] = s.specAfter;
+      const id = gearId(sg(), s.t, s.e), city = sCity(s), q1 = price(id, city, 'sell').v;
+      s.sellN = [...s.crafted];
+      s.sell = QUALITIES.map((_, q) => price(id, city, 'sell', q + 1).v || q1);
+      s.jPrice = price(jId(s, 'FULL'), city, 'sell').v || anyCity(jId(s, 'FULL'), 'sell');
+    }
+    s.step++;
+  }
+  else if (act === 'finish') { s.finished = Date.now(); s.step = 5; confetti(); }
+  else if (act === 'inc') { s.crafted[arg]++; popQ = +arg; }
+  else if (act === 'dec') { s.crafted[arg] = Math.max(0, s.crafted[arg] - 1); popQ = +arg; }
+  else if (act === 'fill') { s.crafted[0] += Math.max(0, s.n - s.crafted.reduce((a, b) => a + b, 0)); popQ = 0; }
+  else if (act === 'extra') s.shop.push({ id: '', name: '', need: 1, price: 0, got: false });
+  else if (act === 'del') s.shop.splice(+arg, 1);
+  else if (act === 'save') {
+    const g = sg();
+    addLog({ kind: 'craft', title: `${s.n}× ${g.n} T${s.t}.${s.e} (${sCity(s)})`, spent: Math.round(sSpent(s)), earned: Math.round(sEarned(s)) });
+    S.session = null; S.tab = 'log';
+  }
+  save(); renderAll();
+}
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (let i = 0; i < 90; i++) {
+    const c = document.createElement('i');
+    c.className = 'confetti';
+    c.style.left = Math.random() * 100 + 'vw';
+    c.style.background = ['#d9a84e', '#6fcf73', '#e8dcc6', '#b48ce0', '#6fa8dc'][i % 5];
+    c.style.animationDelay = Math.random() * 0.5 + 's';
+    c.style.animationDuration = 1.6 + Math.random() * 1.4 + 's';
+    c.style.setProperty('--r', Math.random() * 900 - 450 + 'deg');
+    c.addEventListener('animationend', () => c.remove());
+    document.body.append(c);
+  }
+}
+function countUp(root) {
+  root.querySelectorAll('[data-to]').forEach(el => {
+    const to = +el.dataset.to, t0 = performance.now(), dur = 900;
+    const step = now => { const k = Math.min(1, (now - t0) / dur); el.textContent = fmt(to * (1 - (1 - k) ** 3)); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+const card = (label, value, extra = '') => `<div class="card"><small>${label}</small><b ${extra}>${value}</b></div>`;
+const btn = (act, label, ghost) => `<button ${ghost ? 'class="ghost"' : ''} data-sact="${act}">${label}</button>`;
+
+function sessionBody(s, g) {
+  const city = g && sCity(s), pct = g && (100 * sRate(s)).toFixed(1) + '%', name = g && `${esc(g.n)} T${s.t}.${s.e}`;
+  switch (s.step) {
+    case 0: {
+      let est = '';
+      if (g) {
+        const tmp = { ...s }; buildShop(tmp);
+        const cost = sSpent(tmp), sellP = price(gearId(g, s.t, s.e), city, 'sell').v, rev = s.n * sellP * sellMult();
+        const missing = tmp.shop.filter(x => !x.price).map(x => x.name);
+        est = `<div class="cards">${card('Materials + fee', fmt(cost))}${card('Sells for (Normal)', sellP ? fmt(rev) : '—')}
+          ${card('Expected profit', sellP ? fmt(rev - cost) : '—', `class="${cls(rev - cost)}"`)}${card('Return rate', pct)}</div>
+          ${missing.length ? `<p class="hint neg">No fresh price for: ${missing.map(esc).join(', ')}. You can type prices on the next step.</p>` : ''}`;
+      }
+      return `<h2>What are we crafting?</h2>
+        <div class="row">
+          <label>Item<input list="gearList" data-s="item" value="${g ? esc(g.n) : ''}" placeholder="Search, e.g. Broadsword" style="width:240px"></label>
+          ${g ? `<label>Tier<select data-s="t">${g.t.map(t => `<option ${t === s.t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label>Enchant<select data-s="e">${ENCH.filter(e => g.f[s.t][e] != null).map(e => `<option ${e === s.e ? 'selected' : ''}>${e}</option>`).join('')}</select></label>
+          <label>Crafts<input type="number" min="1" data-s="n" value="${s.n}"></label>
+          <label>Craft in<select data-s="city"><option value="">Bonus city (${S.craftCity[g.cc] || 'none'})</option>${CITIES.map(c => `<option ${c === s.city ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+          <label title="Empty ${journalType(g).toLowerCase()} journals to fill while crafting">Journals<input type="number" min="0" data-s="journals" value="${s.journals}"></label>` : ''}
+        </div>
+        ${g ? est : '<p class="hint">Start typing to search all craftable gear.</p>'}
+        <div class="actions">${btn('abandon', 'Cancel', 1)}${g ? btn('next', 'Start shopping →') : ''}</div>`;
+    }
+    case 1: {
+      const all = s.shop.every(x => x.got);
+      return `<h2>Shopping list <small class="dim">in ${city}</small></h2>
+        <div class="wrap"><table><tr><th>Got</th><th>Item</th><th>Need</th><th>Price each</th><th>Subtotal</th><th></th></tr>
+        ${s.shop.map((x, i) => `<tr class="${x.got ? 'got' : ''}"><td><input type="checkbox" data-s="shop.${i}.got" ${x.got ? 'checked' : ''}></td>
+          <td>${x.id ? icon(x.id, city) + esc(x.name) : `<input data-s="shop.${i}.name" value="${esc(x.name)}" placeholder="e.g. food, potions" style="width:150px;text-align:left">`}</td>
+          <td><input type="number" min="0" data-s="shop.${i}.need" value="${x.need}"></td>
+          <td><input type="number" min="0" data-s="shop.${i}.price" value="${x.price || ''}" placeholder="—"></td>
+          <td>${fmt(x.need * x.price)}</td><td>${x.id ? '' : `<button class="ghost sm" data-sact="del:${i}">✕</button>`}</td></tr>`).join('')}
+        <tr><td></td><td>Station fee (estimate)</td><td></td><td></td><td>${fmt(s.fee)}</td><td></td></tr>
+        <tr><td></td><td><b>Total</b></td><td></td><td></td><td><b>${fmt(sSpent(s))}</b></td><td></td></tr></table></div>
+        <p class="hint">Tick each item as you buy it and correct the price to what you actually paid. Amounts already subtract your ${pct} return rate: keep crafting the returned materials until they run out.</p>
+        <div class="actions">${btn('back', '← Back', 1)}${btn('extra', '+ Add extra', 1)}${btn('next', all ? 'Got everything →' : 'Continue →')}</div>`;
+    }
+    case 2:
+      return `<h2>Travel to ${city}</h2>
+        <div class="cards">${card('Craft in', city)}${card('Return rate', pct)}${card('Bought', `${s.shop.filter(x => x.got).length} / ${s.shop.length}`)}</div>
+        <ul class="checks">
+          <li>${S.craftCity[g.cc] === city ? '✓ Bonus city for ' : '⚠ No city bonus here for '}${g.cc.replace(/_/g, ' ')}</li>
+          <li>Check the usage fee the station shows, and enter what you actually pay below</li>
+          ${s.journals ? `<li>Put your ${s.journals} empty journal${s.journals > 1 ? 's' : ''} in your bag before crafting</li>` : ''}
+          <li>Keep the Albion Data Client running: you'll open the market here later</li>
+        </ul>
+        <div class="row"><label>Station fee paid (total)<input type="number" min="0" data-s="fee" value="${s.fee}"></label></div>
+        <div class="actions">${btn('back', '← Back', 1)}${btn('next', "I'm at the station →")}</div>`;
+    case 3: {
+      const total = s.crafted.reduce((a, b) => a + b, 0), gained = s.specAfter - s.specBefore;
+      return `<h2>Crafting ${name}</h2>
+        <div class="bar big"><div style="width:${Math.min(100, 100 * total / s.n)}%"></div></div><p class="hint">${total} / ${s.n} crafted</p>
+        <div class="qgrid">${QUALITIES.map((q, i) => `<div class="qcell q${i}"><small>${q}</small><div class="counter">
+          <button class="ghost" data-sact="dec:${i}" aria-label="One less ${q}">−</button><b class="${popQ === i ? 'pop' : ''}">${s.crafted[i]}</b>
+          <button data-sact="inc:${i}" aria-label="One more ${q}">+</button></div></div>`).join('')}</div>
+        <div class="row">
+          <label>Spec before<input type="number" min="0" data-s="specBefore" value="${s.specBefore}"></label>
+          <label>Spec after<input type="number" min="0" data-s="specAfter" value="${s.specAfter}"></label>
+          ${s.journals ? `<label>Journals filled<input type="number" min="0" data-s="jFull" value="${s.jFull}"></label>` : ''}
+          ${btn('fill', 'Rest were Normal', 1)}
+        </div>
+        ${gained > 0 ? `<p class="pos pop">+${gained} spec level${gained > 1 ? 's' : ''} unlocked! 🎉</p>` : ''}
+        <div class="actions">${btn('back', '← Back', 1)}${btn('next', 'Done crafting →')}</div>`;
+    }
+    case 4: {
+      const p = sEarned(s) - sSpent(s);
+      return `<h2>Sell your ${name}</h2>
+        <div class="wrap"><table><tr><th>Quality</th><th>Selling</th><th>Price each</th><th>You get (after ${S.sellMode === 'order' ? 'tax + setup' : 'tax'})</th></tr>
+        ${QUALITIES.map((q, i) => s.crafted[i] ? `<tr><td>${q}</td><td><input type="number" min="0" data-s="sellN.${i}" value="${s.sellN[i]}"></td>
+          <td><input type="number" min="0" data-s="sell.${i}" value="${s.sell[i] || ''}" placeholder="—"></td><td>${fmt(s.sellN[i] * s.sell[i] * sellMult())}</td></tr>` : '').join('')}
+        ${s.jFull ? `<tr><td>Full journals</td><td><input type="number" min="0" data-s="jFull" value="${s.jFull}"></td>
+          <td><input type="number" min="0" data-s="jPrice" value="${s.jPrice || ''}" placeholder="—"></td><td>${fmt(s.jFull * s.jPrice * sellMult())}</td></tr>` : ''}
+        </table></div>
+        <div class="cards">${card('Spent', fmt(sSpent(s)))}${card('Earned', fmt(sEarned(s)))}${card('Profit', fmt(p), `class="${cls(p)}"`)}</div>
+        <p class="hint">Prices are prefilled from the market in ${city}, using sell orders or instant sell (top bar). Change them to what you actually sold for.</p>
+        <div class="actions">${btn('back', '← Back', 1)}${btn('finish', 'Finish session 🎉')}</div>`;
+    }
+    default: {
+      const spent = sSpent(s), p = sEarned(s) - spent, mins = Math.round((s.finished - s.started) / 60000), gained = s.specAfter - s.specBefore;
+      return `<div class="done"><div class="trophy">${p >= 0 ? '🏆' : '🛠️'}</div><h2>${p >= 0 ? 'Session complete!' : 'Session complete. Not every run is a winner.'}</h2>
+        <div class="cards">${card('Profit', '0', `class="${cls(p)}" data-to="${Math.round(p)}"`)}${card('Return on spend', spent ? (100 * p / spent).toFixed(1) + '%' : '—')}
+          ${card('Time', mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`)}${card('Crafted', s.crafted.reduce((a, b) => a + b, 0))}</div>
+        <p>${QUALITIES.map((q, i) => s.crafted[i] ? `${s.crafted[i]}× ${q}` : '').filter(Boolean).join(' · ')}${gained > 0 ? ` · <span class="pos">+${gained} spec</span>` : ''}</p>
+        <div class="actions" style="justify-content:center">${btn('back', '← Edit sales', 1)}${btn('abandon', 'Discard', 1)}${btn('save', 'Save to run log')}</div></div>`;
+    }
+  }
+}
+function renderSession() {
+  const el = document.getElementById('session'), s = S.session;
+  if (!s) {
+    el.innerHTML = `<div class="hero ${lastStep !== -2 ? 'enter' : ''}"><div class="trophy">⚒️</div><h2>Ready to craft?</h2>
+      <p class="hint">A session walks you through it: pick the gear, buy materials and journals, travel, craft, log your qualities and spec, then sell. It's saved (and synced) the whole way, so you can close the app and come back.</p>
+      <div class="actions" style="justify-content:center">${btn('new', 'Start a crafting session').replace('<button', '<button class="big"')}</div></div>`;
+    lastStep = -2;
+    return '';
+  }
+  const g = sg(), entering = s.step !== lastStep;
+  lastStep = s.step;
+  el.innerHTML = `<div class="stepper">${STEPS.map((n, i) => `<div class="st ${i < s.step ? 'done' : i === s.step ? 'on' : ''}"><span>${i < s.step ? '✓' : i + 1}</span>${n}</div>`).join('')}</div>
+    <div class="bar"><div style="width:${100 * s.step / (STEPS.length - 1)}%"></div></div>
+    <div class="pane ${entering ? 'enter' : ''}">${sessionBody(s, g)}</div>`;
+  if (entering && s.step === 5) countUp(el);
+  else el.querySelectorAll('[data-to]').forEach(b => b.textContent = fmt(+b.dataset.to));
+  popQ = -1;
+  return g ? `Session: ${s.n}× ${g.n} T${s.t}.${s.e} in ${sCity(s)}` : '';
+}
+
+// ---------- feature wiring ----------
+document.addEventListener('click', ev => {
+  const t = ev.target;
+  const hist = t.closest('img[data-hist]');
+  if (hist) return openHistory(hist.dataset.hist, hist.dataset.city);
+  const act = t.closest('[data-sact]')?.dataset.sact;
+  if (act) return sessionAction(act);
+  const del = t.closest('[data-logdel]')?.dataset.logdel;
+  if (del && confirm('Delete this run from the log?')) { S.log = S.log.filter(e => e.id !== del); save(); renderAll(); }
+  if (t.id === 'planLog') {
+    S.tab = 'log'; save(); renderAll();
+    Object.assign(document.getElementById('logTitle'), { value: t.dataset.title });
+    document.getElementById('logKind').value = 'refine';
+    document.getElementById('logSpent').value = t.dataset.spent;
+    document.getElementById('logEarned').value = t.dataset.earned;
+    document.getElementById('logEarned').focus();
+  }
+});
+document.getElementById('logAdd').onclick = () => {
+  const v = id => document.getElementById(id).value;
+  if (!v('logSpent') && !v('logEarned')) return alert('Enter what you spent and earned');
+  addLog({ date: v('logDate') || today(), kind: v('logKind'), title: v('logTitle').trim(), spent: +v('logSpent') || 0, earned: +v('logEarned') || 0 });
+  ['logTitle', 'logSpent', 'logEarned'].forEach(id => document.getElementById(id).value = '');
+  save(); renderAll();
+};
+document.getElementById('flipScan').onclick = scanFlip;
+document.getElementById('histClose').onclick = () => document.getElementById('hist').close();
+document.getElementById('histCity').onchange = loadHistory;
+document.getElementById('histDays').onchange = loadHistory;
+let installPrompt;
+addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); installPrompt = ev; document.getElementById('install').hidden = false; });
+document.getElementById('install').onclick = async () => { installPrompt?.prompt(); await installPrompt?.userChoice; document.getElementById('install').hidden = true; };
+
 // ---------- UI wiring ----------
 function renderAll() {
   document.querySelectorAll('[data-page]').forEach(p => p.hidden = p.dataset.page !== S.tab);
+  document.getElementById('topbar').hidden = ['log', 'tips', 'settings'].includes(S.tab);
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
-  const info = S.tab === 'craft' ? renderCraft() : S.tab === 'refine' ? renderRefine() : '';
+  const info = { craft: renderCraft, refine: renderRefine, flip: renderFlip, session: renderSession, log: renderLog }[S.tab]?.() || '';
   document.getElementById('status').textContent = [info, `tax ${tax()}%`, statusMsg].filter(Boolean).join(' · ');
   renderSync();
   bind();
@@ -521,7 +1067,7 @@ function renderAll() {
 
 const getK = p => p.split('.').reduce((a, k) => a[k], S);
 const setK = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((a, k) => a[k], S)[last] = v; };
-const REFETCH = ['cCat', 'cTier', 'cEnch', 'cBuyCity', 'cSellCity', 'cCity'];
+const REFETCH = ['cCat', 'cTier', 'cEnch', 'cBuyCity', 'cSellCity', 'cCity', 'fTier', 'fEnch', 'fQual', 'fBuy'];
 function bind() {
   document.querySelectorAll('[data-k]').forEach(el => {
     const v = getK(el.dataset.k);
@@ -537,9 +1083,10 @@ function bind() {
 document.addEventListener('change', ev => {
   const { o, spec: id } = ev.target.dataset;
   if (o) { if (ev.target.value === '') delete O[o]; else O[o] = +ev.target.value; renderAll(); }
+  if (ev.target.dataset.s) sessionInput(ev.target);
   if (id) { S.craftSpec[id] = +ev.target.value || 0; save(); renderAll(); }
 });
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; save(); S.tab === 'settings' ? renderAll() : refresh(); });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; save(); refresh(); });
 document.getElementById('refresh').onclick = () => refresh(true);
 document.getElementById('plan').onclick = makePlan;
 document.addEventListener('click', ev => {
@@ -552,7 +1099,8 @@ document.addEventListener('click', ev => {
 
 function buildStaticUI() {
   document.querySelectorAll('select.cities').forEach(s => s.insertAdjacentHTML('beforeend', CITIES.map(c => `<option>${c}</option>`).join('')));
-  document.querySelector('select.bm').insertAdjacentHTML('beforeend', '<option>Black Market</option>');
+  document.querySelectorAll('select.bm').forEach(s => s.insertAdjacentHTML('beforeend', '<option>Black Market</option>'));
+  document.body.insertAdjacentHTML('beforeend', `<datalist id="gearList">${[...new Set(D.gear.map(g => g.n))].sort().map(n => `<option value="${esc(n)}">`).join('')}</datalist>`);
   const groups = {};
   D.gear.forEach(g => (groups[g.g] ??= new Set()).add(g.c));
   document.getElementById('cats').innerHTML = `<option value="${SCAN}">★ Scan everything</option>` + Object.entries(groups).map(([grp, cs]) =>
@@ -570,6 +1118,7 @@ function selfTest() {
   console.assert(near(rrr(18), 0.1525) && near(rrr(58), 0.3671) && near(rrr(33), 0.2481), 'return rate formula');
   console.assert(resId('T5_METALBAR{e}', 2) === 'T5_METALBAR_LEVEL2@2' && resId('T5_CAPE{ae}', 1) === 'T5_CAPE@1' && resId('T5_METALBAR{e}', 0) === 'T5_METALBAR', 'recipe ids');
   console.assert(itemId(5, 2, 'HIDE') === 'T5_HIDE_LEVEL2@2' && near(focusMult(10000), 0.5), 'item ids / focus');
+  console.assert(cumulative([{ date: '2026-01-02', spent: 10, earned: 30 }, { date: '2026-01-01', spent: 5, earned: 0 }]).map(p => p.y).join() === '-5,15', 'run log cumulative profit');
 }
 
 (async () => {
@@ -578,7 +1127,8 @@ function selfTest() {
   if (syncCode) await pull();
   buildStaticUI();
   renderAll();
-  if (S.tab !== 'settings') refresh();
+  refresh();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
 </script>
 </body>

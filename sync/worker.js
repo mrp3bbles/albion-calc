@@ -14,7 +14,7 @@ export default {
     if (req.method === 'GET') return reply((await env.KV.get(id)) ?? 'null');
     if (req.method === 'PUT') {
       const body = await req.text();
-      if (body.length > 65536) return reply('{"error":"too big"}', 413);
+      if (body.length > 1000000) return reply('{"error":"too big"}', 413);
       try { JSON.parse(body); } catch { return reply('{"error":"not json"}', 400); }
       await env.KV.put(id, body);
       return reply('{"ok":true}');
