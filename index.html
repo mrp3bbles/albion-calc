@@ -46,6 +46,7 @@ code{background:#0f0c09;padding:2px 5px;border-radius:4px;word-break:break-all}
     <label>Buy via<select data-k="buyMode"><option value="instant">Instant buy</option><option value="order">Buy order</option></select></label>
     <label>Sell via<select data-k="sellMode"><option value="order">Sell order</option><option value="instant">Instant sell</option></select></label>
     <label>Crafts<input type="number" data-k="qty" min="1"></label>
+    <label title="Prices older than this count as missing. 0 = use everything">Max price age (h)<input type="number" data-k="maxAge" min="0"></label>
     <label class="chk"><input type="checkbox" data-k="premium">Premium</label>
     <label class="chk"><input type="checkbox" data-k="useFocus">Focus</label>
     <button id="refresh">Refresh prices</button>
@@ -60,6 +61,9 @@ code{background:#0f0c09;padding:2px 5px;border-radius:4px;word-break:break-all}
       <label>Refine in<select data-k="refineCity" class="cities"><option value="">Bonus city</option></select></label>
       <label>Buy in<select data-k="buyCity" class="cities"><option value="">Same as refine</option></select></label>
       <label>Sell in<select data-k="sellCity" class="cities"><option value="">Same as refine</option></select></label>
+      <span class="row" style="gap:8px">Tiers
+        <label class="chk"><input type="checkbox" data-k="rShow.4">T4</label><label class="chk"><input type="checkbox" data-k="rShow.5">T5</label><label class="chk"><input type="checkbox" data-k="rShow.6">T6</label><label class="chk"><input type="checkbox" data-k="rShow.7">T7</label><label class="chk"><input type="checkbox" data-k="rShow.8">T8</label>
+      </span>
     </div>
   </section>
   <section class="wrap"><table id="tbl"></table>
@@ -157,7 +161,9 @@ const DEFAULTS = {
   baseBonus: 18, cityBonus: 40, craftBonus: 15, focusBonus: 59, dailyBonus: 0,
   taxNoPrem: 8, taxPrem: 4, setup: 2.5, stationFee: 400, nutrition: 0.1125,
   fcePerLevel: 250, fceItem: 250, fceTree: 30,
-  odds: [100, 0, 0, 0, 0],
+  odds: [100, 0, 0, 0, 0], maxAge: 72,
+  sort: { refine: { k: 'item', d: 1 }, craft: { k: 'profit', d: -1 } },
+  rShow: { 4: true, 5: true, 6: true, 7: true, 8: true },
   craftCity: CRAFT_CITY,
   spec: { leather: { 4: 24, 5: 14, 6: 3, 7: 0, 8: 0 }, cloth: { 4: 23, 5: 14, 6: 1, 7: 0, 8: 0 } },
   craftSpec: {},
@@ -242,7 +248,9 @@ function price(item, city, side, q = 1) {
   const field = (side === 'buy') === (S[side + 'Mode'] === 'instant') ? 'sell_price_min' : 'buy_price_max';
   const key = `${item}|${city}|${field}`, row = P[`${item}|${city}|${q}`];
   if (q === 1 && key in O) return { key, v: O[key], d: new Date() };
-  return { key, v: row?.[field] || 0, d: row?.[field] ? new Date(row[field + '_date'] + 'Z') : null };
+  const d = row?.[field] ? new Date(row[field + '_date'] + 'Z') : null;
+  if (!d || (S.maxAge && Date.now() - d > S.maxAge * 36e5)) return { key, v: 0, d: null };  // too old to trust
+  return { key, v: row[field], d };
 }
 
 const fmt = x => Math.round(x).toLocaleString();
@@ -255,7 +263,21 @@ const ageText = ds => {
 };
 const priceInput = (p, title = '') => `<input type="number" data-o="${p.key}" value="${p.v || ''}" placeholder="—" title="${title}">`;
 const icon = id => `<img src="https://render.albiononline.com/v1/item/${id}.png?size=56" alt="" loading="lazy">`;
-const profitCells = (profit, spend, qty) =>
+const oldest = ds => ds.every(Boolean) ? Math.min(...ds) : 0;
+const cmp = (x, y) => typeof x === 'string' ? x.localeCompare(y) : x - y;
+const SORT_KEYS = {
+  profit: c => c.profit, margin: c => c.profit / (c.cost + c.fee), cost: c => c.cost, focus: c => c.focus, age: c => -c.age,
+};
+function sortRows(rows, tab, itemKey) {
+  const { k, d } = S.sort[tab], f = k === 'item' ? itemKey : SORT_KEYS[k];
+  // rows with missing prices sink to the bottom on number sorts, whichever direction
+  return rows.sort((a, b) => (k !== 'item' && b.ok - a.ok) || cmp(f(a), f(b)) * d);
+}
+const th = (tab, label, k) => {
+  const s = S.sort[tab];
+  return `<th data-sort="${tab}.${k}" style="cursor:pointer" title="Sort">${label}${s.k === k ? (s.d > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+};
+const profitCells =(profit, spend, qty) =>
   `<td class="${cls(profit)}">${fmt(profit)}</td><td class="${cls(profit)}">${(100 * profit / spend).toFixed(1)}%</td><td class="${cls(profit)}">${fmt(profit * qty)}</td>`;
 
 // ---------- refining ----------
@@ -275,17 +297,17 @@ function calcRefine(t, e, focus) {
   const r = refineRate(focus);
   const cost = (n * raw.v + prev.v) * buyMult() * (1 - r);  // returned mats valued at buy price
   const fee = stationFee(D.ref[m.out][t][e][1]);
-  return { t, e, n, r, raw, prev, out, cost, fee, profit: out.v * sellMult() - cost - fee, ok: raw.v && prev.v && out.v };
+  return { t, e, n, r, raw, prev, out, cost, fee, profit: out.v * sellMult() - cost - fee, ok: !!(raw.v && prev.v && out.v),
+    focus: refineFocus(t, e), age: oldest([raw.d, prev.d, out.d]) };
 }
 
 function renderRefine() {
-  const rows = TIERS.flatMap(t => ENCH.map(e => calcRefine(t, e, S.useFocus)))
-    .sort((a, b) => (b.ok - a.ok) || (b.profit - a.profit));
-  const q = S.qty;
+  const rows = sortRows(TIERS.filter(t => S.rShow[t]).flatMap(t => ENCH.map(e => calcRefine(t, e, S.useFocus))), 'refine', c => c.t * 10 + c.e);
+  const q = S.qty, h = (l, k) => th('refine', l, k);
   document.getElementById('tbl').innerHTML =
-    `<tr><th>Item</th><th>Raw</th><th>Prev</th><th>Sell</th><th>Cost/craft</th><th>Fee</th><th>Profit/craft</th><th>Margin</th><th>×${q}</th><th>Buy for ×${q}</th><th>Focus</th>${S.useFocus ? '<th>Silver/focus</th>' : ''}<th>Age</th></tr>` +
+    `<tr>${h('Item', 'item')}<th>Raw</th><th>Prev</th><th>Sell</th>${h('Cost/craft', 'cost')}<th>Fee</th>${h('Profit/craft', 'profit')}${h('Margin', 'margin')}<th>×${q}</th><th>Buy for ×${q}</th>${h('Focus', 'focus')}${S.useFocus ? '<th>Silver/focus</th>' : ''}${h('Age', 'age')}</tr>` +
     rows.map(c => {
-      const fc = refineFocus(c.t, c.e);
+      const fc = c.focus;
       const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcRefine(c.t, c.e, false).profit) / fc).toFixed(1) : '—'}</td>` : '';
       return `<tr><td>${icon(itemId(c.t, c.e, MATS[S.mat].out))}T${c.t}.${c.e}</td>` +
         `<td>${priceInput(c.raw)}</td><td>${priceInput(c.prev)}</td><td>${priceInput(c.out)}</td>` +
@@ -306,11 +328,10 @@ const resId = (tmpl, e) => tmpl.replace('{e}', e ? `_LEVEL${e}@${e}` : '').repla
 const craftCity = g => S.cCity || S.craftCity[g.cc] || 'Caerleon';
 const craftRate = (g, focus) => rrr(S.baseBonus + (S.craftCity[g.cc] === craftCity(g) ? S.craftBonus : 0) + (focus ? S.focusBonus : 0) + S.dailyBonus);
 const spec = g => S.craftSpec[g.id] || 0;
-const craftFocus = (g, t, e) => {
-  const tree = D.gear.filter(x => x.cc === g.cc && x.id !== g.id).reduce((a, x) => a + spec(x), 0);
-  return g.f[t][e] * focusMult(spec(g) * S.fceItem + tree * S.fceTree);
-};
-const catGear = () => D.gear.filter(g => g.c === S.cCat);
+let treeSpec = {};  // craft category -> summed spec of its items, rebuilt each render
+const craftFocus = (g, t, e) => g.f[t][e] * focusMult(spec(g) * S.fceItem + (treeSpec[g.cc] - spec(g)) * S.fceTree);
+const SCAN = '*', SCAN_LIMIT = 200;
+const catGear = () => S.cCat === SCAN ? D.gear : D.gear.filter(g => g.c === S.cCat);
 const craftRows = () => catGear().flatMap(g => g.t.flatMap(t => ENCH.map(e => ({ g, t, e }))))
   .filter(({ g, t, e }) => (S.cTier === '0' || +S.cTier === t) && (S.cEnch === '-1' || +S.cEnch === e) && g.f[t][e] !== null);
 
@@ -322,49 +343,67 @@ function calcCraft({ g, t, e }, focus) {
   let best = 0, ev = 0;
   S.odds.forEach((pct, i) => { best = price(id, sc, 'sell', i + 1).v || best; ev += pct / 100 * best; });
   const fee = stationFee(g.v[t][e]);
-  const ok = mats.every(m => m.p.v) && sell.v;
+  const ok = !!(mats.every(m => m.p.v) && sell.v);
   const revenue = (sell.key in O ? sell.v : ev) * sellMult();
-  return { g, t, e, r, mats, sell, cost, fee, ok, profit: revenue - cost - fee, city };
+  return { g, t, e, r, mats, sell, cost, fee, ok, profit: revenue - cost - fee, city,
+    focus: craftFocus(g, t, e), age: oldest([...mats.map(m => m.p.d), sell.d]) };
 }
 
 function renderCraft() {
-  const rows = craftRows().map(x => calcCraft(x, S.useFocus)).sort((a, b) => (b.ok - a.ok) || (b.profit - a.profit));
-  const q = S.qty;
+  treeSpec = {};
+  D.gear.forEach(g => treeSpec[g.cc] = (treeSpec[g.cc] || 0) + spec(g));
+  const scan = S.cCat === SCAN;
+  const all = sortRows(craftRows().map(x => calcCraft(x, S.useFocus)), 'craft', c => c.g.n + c.t + c.e);
+  const rows = scan ? all.slice(0, SCAN_LIMIT) : all;
+  const q = S.qty, h = (l, k) => th('craft', l, k);
   document.getElementById('ctbl').innerHTML =
-    `<tr><th>Item</th><th>Spec</th><th>Materials (price each)</th><th>Sell</th><th>Cost/craft</th><th>Fee</th><th>Profit/craft</th><th>Margin</th><th>×${q}</th><th>Focus</th>${S.useFocus ? '<th>Silver/focus</th>' : ''}<th>Age</th></tr>` +
+    `<tr>${h('Item', 'item')}<th>Spec</th><th>Materials (price each)</th><th>Sell</th>${h('Cost/craft', 'cost')}<th>Fee</th>${h('Profit/craft', 'profit')}${h('Margin', 'margin')}<th>×${q}</th>${h('Focus', 'focus')}${S.useFocus ? '<th>Silver/focus</th>' : ''}${h('Age', 'age')}</tr>` +
     rows.map(c => {
-      const fc = craftFocus(c.g, c.t, c.e);
-      const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcCraft(c, false).profit) / fc).toFixed(1) : '—'}</td>` : '';
+      const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcCraft(c, false).profit) / c.focus).toFixed(1) : '—'}</td>` : '';
       const mats = c.mats.map(m => `<span title="${m.n}× ${m.id}">${m.n}×${priceInput(m.p, m.id)}</span>`).join('');
-      return `<tr><td>${icon(gearId(c.g, c.t, c.e))}${c.g.n} <span class="dim">T${c.t}.${c.e}</span></td>` +
+      return `<tr><td>${icon(gearId(c.g, c.t, c.e))}${c.g.n} <span class="dim">T${c.t}.${c.e}${scan ? ' · ' + c.city : ''}</span></td>` +
         `<td><input type="number" class="spec" min="0" max="120" data-spec="${c.g.id}" value="${spec(c.g)}"></td>` +
         `<td><div class="mats">${mats}</div></td><td>${priceInput(c.sell)}</td>` +
         (c.ok ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td>` + profitCells(c.profit, c.cost + c.fee, q) : '<td colspan="5" class="dim">missing price</td>') +
-        `<td class="dim">${fmt(fc)}</td>${spf}<td>${ageText([...c.mats.map(m => m.p.d), c.sell.d])}</td></tr>`;
+        `<td class="dim">${fmt(c.focus)}</td>${spf}<td>${ageText([...c.mats.map(m => m.p.d), c.sell.d])}</td></tr>`;
     }).join('') || '<tr><td class="dim">Nothing craftable for this filter</td></tr>';
+  if (scan) return `Scanned ${all.length} crafts${all.length > SCAN_LIMIT ? `, showing top ${SCAN_LIMIT}` : ''} · each item crafted in its bonus city · Normal quality only`;
   const g = catGear()[0];
   return g ? `Return rate ${(100 * craftRate(g, S.useFocus)).toFixed(1)}% · craft in ${craftCity(g)} · sell in ${S.cSellCity || craftCity(g)}` : '';
 }
 
 // ---------- prices ----------
-async function fetchPrices(ids, qualities, cities) {
-  const list = [...ids];
-  for (let i = 0; i < list.length; i += 60) {  // keep URLs short
-    const url = `${API}${list.slice(i, i + 60).join(',')}.json?qualities=${qualities}&locations=${encodeURIComponent(cities.join(','))}`;
-    const res = await fetch(url);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function fetchPrices(ids, qualities, cities, label) {
+  const list = [...ids], step = 100;  // ~100 ids keeps the URL a safe length
+  for (let i = 0; i < list.length; i += step) {
+    if (list.length > step) setStatus(`loading ${label} ${Math.min(i + step, list.length)}/${list.length}…`);
+    const url = `${API}${list.slice(i, i + step).join(',')}.json?qualities=${qualities}&locations=${encodeURIComponent([...cities].join(','))}`;
+    let res = await fetch(url);
+    for (let tries = 0; res.status === 429 && tries < 3; tries++) {  // API rate limit: back off and retry
+      setStatus('price server says slow down, waiting…');
+      await sleep(15000);
+      res = await fetch(url);
+    }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     for (const r of await res.json()) P[`${r.item_id}|${r.city}|${r.quality}`] = r;
   }
 }
+const setStatus = msg => document.getElementById('status').textContent = msg;
 async function refresh(clearOverrides) {
   if (clearOverrides) O = {};
   statusMsg = 'loading prices…'; renderAll();
   try {
     if (S.tab === 'craft') {
-      const rows = craftRows(), mats = new Set();
-      rows.forEach(({ g, t, e }) => g.r[t].forEach(([tmpl]) => mats.add(resId(tmpl, e))));
-      await fetchPrices(mats, '1', CITIES);
-      await fetchPrices(new Set(rows.map(({ g, t, e }) => gearId(g, t, e))), '1,2,3,4,5', [...CITIES, 'Black Market']);
+      const rows = craftRows(), mats = new Set(), gear = new Set(), buyAt = new Set(), sellAt = new Set();
+      rows.forEach(({ g, t, e }) => {
+        const city = craftCity(g);
+        buyAt.add(S.cBuyCity || city); sellAt.add(S.cSellCity || city); gear.add(gearId(g, t, e));
+        g.r[t].forEach(([tmpl]) => mats.add(resId(tmpl, e)));
+      });
+      await fetchPrices(mats, '1', buyAt, 'materials');
+      // scan: Normal quality only, otherwise the response is huge
+      await fetchPrices(gear, S.cCat === SCAN ? '1' : '1,2,3,4,5', sellAt, 'gear');
     } else {
       const ids = new Set();
       for (const m of Object.values(MATS)) {
@@ -412,13 +451,20 @@ document.addEventListener('change', ev => {
 });
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; save(); S.tab === 'settings' ? renderAll() : refresh(); });
 document.getElementById('refresh').onclick = () => refresh(true);
+document.addEventListener('click', ev => {
+  const s = ev.target.closest('th[data-sort]')?.dataset.sort;
+  if (!s) return;
+  const [tab, k] = s.split('.'), cur = S.sort[tab];
+  S.sort[tab] = { k, d: cur.k === k ? -cur.d : k === 'item' || k === 'age' ? 1 : -1 };
+  save(); renderAll();
+});
 
 function buildStaticUI() {
   document.querySelectorAll('select.cities').forEach(s => s.insertAdjacentHTML('beforeend', CITIES.map(c => `<option>${c}</option>`).join('')));
   document.querySelector('select.bm').insertAdjacentHTML('beforeend', '<option>Black Market</option>');
   const groups = {};
   D.gear.forEach(g => (groups[g.g] ??= new Set()).add(g.c));
-  document.getElementById('cats').innerHTML = Object.entries(groups).map(([grp, cs]) =>
+  document.getElementById('cats').innerHTML = `<option value="${SCAN}">★ Scan everything</option>` + Object.entries(groups).map(([grp, cs]) =>
     `<optgroup label="${grp}">${[...cs].sort().map(c => `<option value="${c}">${c.replace(/^accessoires_capes_/, 'cape: ').replace(/_/g, ' ')}</option>`).join('')}</optgroup>`).join('');
   document.getElementById('odds').innerHTML = QUALITIES.map((q, i) => `<label>${q}<input type="number" step="0.1" data-k="odds.${i}"></label>`).join('');
   document.getElementById('ccity').innerHTML = [...new Set(D.gear.map(g => g.cc))].sort().map(cc =>
