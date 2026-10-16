@@ -70,6 +70,16 @@ code{background:#0f0c09;padding:2px 5px;border-radius:4px;word-break:break-all}
     <p class="hint">Price cells are editable. Type what you see in-game to override stale data (Refresh clears overrides). Prices older than 24h are red.</p>
   </section>
   <section>
+    <h3>Daily run planner</h3>
+    <div class="row">
+      <label>Budget (silver)<input type="number" data-k="budget" min="0" step="100000" style="width:120px"></label>
+      <label title="Cap each item at this share of its average daily sales, so you don't flood the market">Max % of daily sales<input type="number" data-k="planShare" min="1" max="100"></label>
+      <label class="chk" title="Buy and sell each item in whichever royal city is best, instead of the cities above"><input type="checkbox" data-k="shopAround">Shop around royal cities</label>
+      <button id="plan">Plan my run</button>
+    </div>
+    <div id="planOut"><p class="hint">Uses the tiers ticked above, your return rate and fees. Only plans items with a profit and real sales volume (last 7 days).</p></div>
+  </section>
+  <section>
     <h3>Refining spec</h3>
     <p class="hint">Without focus, spec doesn't change refining profit. It only lowers focus cost (the Focus column).</p>
     <div class="wrap"><table id="spec"></table></div>
@@ -162,6 +172,7 @@ const DEFAULTS = {
   taxNoPrem: 8, taxPrem: 4, setup: 2.5, stationFee: 400, nutrition: 0.1125,
   fcePerLevel: 250, fceItem: 250, fceTree: 30,
   odds: [100, 0, 0, 0, 0], maxAge: 72,
+  budget: 1000000, planShare: 20, shopAround: false,
   sort: { refine: { k: 'item', d: 1 }, craft: { k: 'profit', d: -1 } },
   rShow: { 4: true, 5: true, 6: true, 7: true, 8: true },
   craftCity: CRAFT_CITY,
@@ -289,11 +300,11 @@ const sellCity = () => S.sellCity || refineCity();
 const refineRate = focus => rrr(S.baseBonus + (refineCity() === MATS[S.mat].bonus ? S.cityBonus : 0) + (focus ? S.focusBonus : 0) + S.dailyBonus);
 const refineFocus = (t, e) => D.ref[MATS[S.mat].out][t][e][0] * focusMult(S.spec[S.mat][t] * S.fcePerLevel);
 
-function calcRefine(t, e, focus) {
+function calcRefine(t, e, focus, bc = buyCity(), sc = sellCity()) {
   const m = MATS[S.mat], n = RAW_COUNT[t];
-  const raw = price(itemId(t, e, m.raw), buyCity(), 'buy');
-  const prev = price(prevId(t, e), buyCity(), 'buy');
-  const out = price(itemId(t, e, m.out), sellCity(), 'sell');
+  const raw = price(itemId(t, e, m.raw), bc, 'buy');
+  const prev = price(prevId(t, e), bc, 'buy');
+  const out = price(itemId(t, e, m.out), sc, 'sell');
   const r = refineRate(focus);
   const cost = (n * raw.v + prev.v) * buyMult() * (1 - r);  // returned mats valued at buy price
   const fee = stationFee(D.ref[m.out][t][e][1]);
@@ -321,6 +332,82 @@ function renderRefine() {
     ).join('');
   return `Return rate ${(100 * refineRate(S.useFocus)).toFixed(1)}% · refine in ${refineCity()} · buy in ${buyCity()} · sell in ${sellCity()}`;
 }
+
+// ---------- daily run planner ----------
+const HISTORY_API = 'https://europe.albion-online-data.com/api/v2/stats/history/';
+async function dailyVolume(ids, cities) {
+  const res = await fetch(`${HISTORY_API}${[...ids].join(',')}.json?time-scale=24&qualities=1&locations=${encodeURIComponent([...cities].join(','))}`);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const V = {}, weekAgo = Date.now() - 7 * 864e5;
+  for (const h of await res.json()) {
+    const days = h.data.filter(d => new Date(d.timestamp + 'Z') > weekAgo);
+    V[`${h.item_id}|${h.location}`] = days.reduce((a, d) => a + d.item_count, 0) / 7;
+  }
+  return V;
+}
+
+// Greedy: best margin first, each item capped by budget and by its share of daily sales.
+function planRun(candidates, V, budget, share) {
+  const picks = [];
+  for (const c of [...candidates].sort((a, b) => b.profit / b.spend - a.profit / a.spend)) {
+    const cap = Math.floor((V[`${c.outId}|${c.sc}`] || 0) * share / 100);
+    const n = Math.min(cap, Math.floor(budget / c.spend));
+    if (n < 1) continue;
+    picks.push({ ...c, n });
+    budget -= n * c.spend;
+  }
+  return picks;
+}
+
+async function makePlan() {
+  const out = document.getElementById('planOut'), m = MATS[S.mat];
+  out.innerHTML = '<p class="hint">Checking prices and sales volume…</p>';
+  const tiers = TIERS.filter(t => S.rShow[t]);
+  const royal = CITIES.slice(0, 5);  // no Caerleon (red zone) or Brecilien (mists) hauling
+  const buyAt = S.shopAround ? royal : [buyCity()], sellAt = S.shopAround ? royal : [sellCity()];
+  let V;
+  try {
+    await fetchPrices(refineIds(), '1', CITIES, 'prices');
+    V = await dailyVolume(new Set(tiers.flatMap(t => ENCH.map(e => itemId(t, e, m.out)))), sellAt);
+  } catch (err) { out.innerHTML = `<p class="hint neg">Couldn't load prices or sales volume (${err.message}).</p>`; return; }
+  renderAll();
+  // best buy/sell city pair for each item
+  const candidates = tiers.flatMap(t => ENCH.map(e => {
+    let best = null;
+    for (const bc of buyAt) for (const sc of sellAt) {
+      const c = calcRefine(t, e, S.useFocus, bc, sc);
+      if (c.ok && c.profit > 0 && (!best || c.profit > best.profit)) best = { ...c, bc, sc };
+    }
+    return best && { ...best, spend: best.cost + best.fee, outId: itemId(t, e, m.out) };
+  })).filter(Boolean);
+  const picks = planRun(candidates, V, S.budget, S.planShare);
+  if (!picks.length) {
+    out.innerHTML = `<p class="hint">Nothing worth refining right now with these settings${candidates.length ? ` (${candidates.length} items are profitable, but none fit the budget or have enough sales)` : ''}. Try buy orders, shopping around, or more tiers.</p>`;
+    return;
+  }
+  const raws = c => Math.ceil(c.n * c.n0 * (1 - c.r)), prevs = c => Math.ceil(c.n * (1 - c.r));
+  picks.forEach(c => c.n0 = RAW_COUNT[c.t]);
+  const spend = picks.reduce((a, c) => a + c.n * c.spend, 0), profit = picks.reduce((a, c) => a + c.n * c.profit, 0);
+  const byCity = (key, line) => Object.entries(picks.reduce((g, c) => ((g[c[key]] ??= []).push(c), g), {}))
+    .map(([city, cs]) => `<li><b>${city}</b>: ${cs.map(line).join(', ')}</li>`).join('');
+  const mode = (side) => S[side + 'Mode'] === 'instant' ? (side === 'buy' ? 'instant buy' : 'instant sell') : side + ' orders';
+  out.innerHTML = `
+    <div class="wrap"><table>
+      <tr><th>Item</th><th>Crafts</th><th>Buy in</th><th>Sell in</th><th>Sales/day</th><th>Spend</th><th>Profit</th><th>Margin</th></tr>
+      ${picks.map(c => `<tr><td>${icon(c.outId)}T${c.t}.${c.e}</td><td>${c.n}</td><td>${c.bc}</td><td>${c.sc}</td>
+        <td class="dim">${Math.round(V[`${c.outId}|${c.sc}`])}</td><td>${fmt(c.n * c.spend)}</td><td class="pos">${fmt(c.n * c.profit)}</td>
+        <td class="pos">${(100 * c.profit / c.spend).toFixed(1)}%</td></tr>`).join('')}
+      <tr><td><b>Total</b></td><td></td><td></td><td></td><td></td><td><b>${fmt(spend)}</b></td><td class="pos"><b>${fmt(profit)}</b></td><td class="pos"><b>${(100 * profit / spend).toFixed(1)}%</b></td></tr>
+    </table></div>
+    <h3>Route</h3>
+    <ol>
+      ${byCity('bc', c => `${raws(c)}× T${c.t}.${c.e} ${m.raw.toLowerCase()} + ${prevs(c)}× T${c.t - 1}${c.t > 4 ? '.' + c.e : ''} ${m.out.toLowerCase()}`).replace(/<li>/g, `<li>Buy (${mode('buy')}) in `)}
+      <li>Refine everything in <b>${refineCity()}</b>, ${(100 * picks[0].r).toFixed(1)}% return rate. Keep refining the returned materials until they run out.</li>
+      ${byCity('sc', c => `${c.n}× T${c.t}.${c.e} ${m.out.toLowerCase()}`).replace(/<li>/g, `<li>Sell (${mode('sell')}) in `)}
+    </ol>
+    <p class="hint">Buy amounts already subtract what returns give back, so you buy less than crafts × recipe. Spend includes the station fee${S.buyMode === 'order' ? ' and buy-order setup fees' : ''}. ${budgetLeftNote(S.budget - spend)}</p>`;
+}
+const budgetLeftNote = left => left > 0.1 * S.budget ? `${fmt(left)} silver left unspent: sales volume capped the plan.` : '';
 
 // ---------- crafting ----------
 const gearId = (g, t, e) => `T${t}_${g.id}` + (e ? `@${e}` : '');
@@ -390,6 +477,14 @@ async function fetchPrices(ids, qualities, cities, label) {
   }
 }
 const setStatus = msg => document.getElementById('status').textContent = msg;
+function refineIds() {
+  const ids = new Set();
+  for (const m of Object.values(MATS)) {
+    ids.add(`T3_${m.out}`);
+    for (const t of TIERS) for (const e of ENCH) { ids.add(itemId(t, e, m.raw)); ids.add(itemId(t, e, m.out)); }
+  }
+  return ids;
+}
 async function refresh(clearOverrides) {
   if (clearOverrides) O = {};
   statusMsg = 'loading prices…'; renderAll();
@@ -405,12 +500,7 @@ async function refresh(clearOverrides) {
       // scan: Normal quality only, otherwise the response is huge
       await fetchPrices(gear, S.cCat === SCAN ? '1' : '1,2,3,4,5', sellAt, 'gear');
     } else {
-      const ids = new Set();
-      for (const m of Object.values(MATS)) {
-        ids.add(`T3_${m.out}`);
-        for (const t of TIERS) for (const e of ENCH) { ids.add(itemId(t, e, m.raw)); ids.add(itemId(t, e, m.out)); }
-      }
-      await fetchPrices(ids, '1', CITIES);
+      await fetchPrices(refineIds(), '1', CITIES);
     }
     statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
   } catch (err) {
@@ -451,6 +541,7 @@ document.addEventListener('change', ev => {
 });
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; save(); S.tab === 'settings' ? renderAll() : refresh(); });
 document.getElementById('refresh').onclick = () => refresh(true);
+document.getElementById('plan').onclick = makePlan;
 document.addEventListener('click', ev => {
   const s = ev.target.closest('th[data-sort]')?.dataset.sort;
   if (!s) return;
@@ -473,6 +564,8 @@ function buildStaticUI() {
 }
 
 function selfTest() {
+  const plan = planRun([{ profit: 10, spend: 100, outId: 'A', sc: 'X' }, { profit: 30, spend: 100, outId: 'B', sc: 'X' }], { 'A|X': 50, 'B|X': 10 }, 1000, 50);
+  console.assert(plan[0].outId === 'B' && plan[0].n === 5 && plan[1].n === 5, 'planner: best margin first, capped by volume, then budget');
   const near = (a, b) => Math.abs(a - b) < 0.001;
   console.assert(near(rrr(18), 0.1525) && near(rrr(58), 0.3671) && near(rrr(33), 0.2481), 'return rate formula');
   console.assert(resId('T5_METALBAR{e}', 2) === 'T5_METALBAR_LEVEL2@2' && resId('T5_CAPE{ae}', 1) === 'T5_CAPE@1' && resId('T5_METALBAR{e}', 0) === 'T5_METALBAR', 'recipe ids');
