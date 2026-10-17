@@ -328,6 +328,7 @@ nav i{font-style:normal;margin-right:4px}
     <p class="hint">Focus cost = base × 0.5^(FCE / 10000). Base focus costs come from the game files.</p>
     <h3>Crafting quality odds %</h3>
     <div class="row" id="odds"></div>
+    <div id="learned"></div>
     <p class="hint">Sell value = these odds × each quality's price (falling back to the next-lower quality when it has no price). The default (100% Normal) is the safe assumption; raise the others once you know your spec's real odds.</p>
     <h3>City crafting bonuses</h3>
     <p class="hint">Each royal city gives +15% production (a better return rate) when you craft certain item types there. The crafting tab and sessions use this to pick your craft city. Faction capes, normal capes, bags and gathering gear have no city bonus. If the game ever shows one, set it below.</p>
@@ -366,7 +367,7 @@ const DEFAULTS = {
   budget: 1000000, planShare: 20, shopAround: false,
   sort: { refine: { k: 'item', d: 1 }, craft: { k: 'profit', d: -1 }, flip: { k: 'profit', d: -1 } },
   fTier: '4', fEnch: '0', fQual: '0', fBuy: '',
-  log: [], session: null, history: {},
+  log: [], session: null, history: {}, qstats: {}, learnOdds: false,
   rShow: { 4: true, 5: true, 6: true, 7: true, 8: true },
   craftCity: CRAFT_CITY,
   spec: { leather: { 4: 24, 5: 14, 6: 3, 7: 0, 8: 0 }, cloth: { 4: 23, 5: 14, 6: 1, 7: 0, 8: 0 } },
@@ -684,7 +685,7 @@ function calcCraft({ g, t, e }, focus) {
   const cost = mats.reduce((a, m) => a + m.p.v * m.n * (m.ret ? 1 - r : 1), 0) * buyMult();
   const id = gearId(g, t, e), sell = price(id, sc, 'sell');
   let best = 0, ev = 0;
-  S.odds.forEach((pct, i) => { best = price(id, sc, 'sell', i + 1).v || best; ev += pct / 100 * best; });
+  oddsFor(g).forEach((pct, i) => { best = price(id, sc, 'sell', i + 1).v || best; ev += pct / 100 * best; });
   const fee = stationFee(g.v[t][e]);
   const ok = !!(mats.every(m => m.p.v) && sell.v);
   const revenue = (sell.key in O ? sell.v : ev) * sellMult();
@@ -935,7 +936,7 @@ const jId = (s, kind) => `T${s.t}_JOURNAL_${journalType(sg())}_${kind}`;
 const anyCity = (id, side) => { const v = CITIES.map(c => price(id, c, side).v).filter(Boolean); return v.length ? (side === 'buy' ? Math.min(...v) : Math.max(...v)) : 0; };
 // station fees: what you logged, or the estimate until you log one
 const sFee = s => s.fees?.length ? s.fees.reduce((a, f) => a + f.amount, 0) : +s.fee || 0;
-const sSpent = s => s.shop.reduce((a, x) => a + x.need * x.price, 0) + sFee(s);
+const sSpent = s => s.shop.reduce((a, x) => a + (x.need - (x.left || 0)) * x.price, 0) + sFee(s);  // kept leftovers aren't a cost
 // crafting food, buff values from the game files (craftingquality / crafttime)
 const FOODS = [
   { id: 'T2_MEAL_SALAD', n: 'Bean Salad', q: 33, sp: 16 }, { id: 'T4_MEAL_SALAD', n: 'Turnip Salad', q: 66, sp: 32 },
@@ -951,7 +952,12 @@ function feeLog(s) {
     ${fees.length ? `<table class="fees nocards">${fees.map((f, i) => `<tr><td class="dim">${new Date(f.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td><td style="text-align:left">${esc(f.note || '')}</td><td>${fmt(f.amount)}</td><td><button class="ghost sm" data-sact="feedel:${i}">✕</button></td></tr>`).join('')}
       <tr><td></td><td style="text-align:left"><b>Total fees</b></td><td><b>${fmt(sFee(s))}</b></td><td></td></tr></table>` : ''}`;
 }
-const sEarned = s => s.kind === 'refine' ? s.lines.reduce((a, l) => a + l.sold * l.price, 0) * sellMult() : (s.sellN.reduce((a, n, q) => a + n * s.sell[q], 0) + s.jFull * s.jPrice) * sellMult();
+// earned = recorded sales (older sessions without a sales list: planned amounts × prices)
+const sEarned = s => {
+  const sales = s.sales?.reduce((a, x) => a + x.n * x.price, 0);
+  if (s.kind === 'refine') return (sales ?? s.lines.reduce((a, l) => a + l.sold * l.price, 0)) * sellMult();
+  return ((sales ?? s.sellN.reduce((a, n, q) => a + n * s.sell[q], 0)) + s.jFull * s.jPrice) * sellMult();
+};
 let lastStep = -1, popQ = -1;
 
 const sBuy = s => s.buyCity || sCity(s), sSell = s => s.sellCity || sCity(s);
@@ -1025,23 +1031,41 @@ function sessionAction(action) {
   else if (act === 'rdel') s.lines.splice(+arg, 1);
   else if (act === 'radj') { const [i, d] = arg.split(':').map(Number), l = s.lines[i]; l.made = Math.max(0, l.made + d); popQ = i; }
   else if (act === 'rall') { const l = s.lines[+arg]; l.made = Math.max(l.made, l.n); popQ = +arg; }
-  else if (act === 'next' && isRefine(s)) { refineNext(s); s.step++; }
+  else if (act === 'next' && isRefine(s)) { refineNext(s); s.step++; if (s.step === 4) { save(); return sessionPrices(); } }
   else if (act === 'save' && isRefine(s)) {
     addLog({ kind: 'refine', title: `${s.mat} ${s.lines.map(l => `T${l.t}.${l.e}×${l.made}`).join(', ')} (${rCity(s)})`, spent: Math.round(sSpent(s)), earned: Math.round(sEarned(s)) });
     S.session = null; S.tab = 'log';
   }
   else if (act === 'back') s.step--;
   else if (act === 'next') {
-    if (s.step === 0) { buildShop(s); s.started = Date.now(); }
+    if (s.step === 0) { buildShop(s); s.started = Date.now(); takeSnapshot(s); }
     if (s.step === 3) {  // crafting done: save the new spec, prefill the sell step
+      s.sales ||= [];
       if (s.specAfter > s.specBefore) S.craftSpec[s.gid] = s.specAfter;
       s.sellN = [...s.crafted];
       if (!s.sellN.some(Boolean)) s.sellN[0] = s.n;  // counters skipped: assume all Normal
       prefillSell(s);
     }
     s.step++;
+    if (s.step === 4) { save(); return sessionPrices(); }  // fresh prices for selling
   }
-  else if (act === 'finish') { s.finished = Date.now(); s.step = 5; confetti(); }
+  else if (act === 'finish') {
+    if (s.sales && !s.sales.length && leftToSell(s) && confirm('Record everything as sold at the prices shown?') && !sellAllLeft(s)) return;
+    const left = s.sales ? leftToSell(s) : 0;
+    if (left && !confirm(`${left} still unsold. Finish anyway? Unsold items don't count toward profit.`)) return;
+    s.finished = Date.now(); s.step = 5; confetti();
+  }
+  else if (act === 'sellat') { s.sellCity = arg; prefillSell(s); }
+  else if (act === 'rsellat') { const [i, c] = arg.split(':'), l = s.lines[+i]; l.sc = c; l.price = price(itemId(l.t, l.e, rOut(s)), c, 'sell').v || l.price; }
+  else if (act === 'sale') {
+    const v = id => document.getElementById(id).value, k = +v('saleK'), slot = sellSlots(s).find(x => x.k === k);
+    if (!slot) return;
+    const n = +v('saleN') || Math.max(0, slot.made - soldOf(s, k)), pr = +v('saleP') || slot.suggest;
+    if (!n || !pr) return alert('Enter how many you sold and the price');
+    s.sales.push({ k, n, price: pr, city: v('saleCity') || slot.city, at: Date.now() });
+  }
+  else if (act === 'sellall') { if (!sellAllLeft(s)) return; }
+  else if (act === 'saledel') s.sales.splice(+arg, 1);
   else if (act === 'inc') { s.crafted[arg]++; popQ = +arg; }
   else if (act === 'dec') { s.crafted[arg] = Math.max(0, s.crafted[arg] - 1); popQ = +arg; }
   else if (act === 'fill') { s.crafted[0] += Math.max(0, s.n - s.crafted.reduce((a, b) => a + b, 0)); popQ = 0; }
@@ -1066,6 +1090,7 @@ function sessionAction(action) {
   else if (act === 'save') {
     const g = sg(), made = s.crafted.reduce((a, b) => a + b, 0), key = `${s.gid}|${s.t}|${s.e}`;
     const h = S.history[key] ||= { gid: s.gid, t: s.t, e: s.e, times: 0, crafted: 0 };
+    [s.gid, '_all'].forEach(k => { const q = S.qstats[k] ||= [0, 0, 0, 0, 0]; s.crafted.forEach((n, i) => q[i] += n); });
     Object.assign(h, { times: h.times + 1, crafted: h.crafted + made, last: today(), city: sSell(s), soldAt: s.sell[0],
       unitProfit: made ? (sEarned(s) - sSpent(s)) / made : 0 });
     addLog({ kind: 'craft', title: `${s.n}× ${g.n} T${s.t}.${s.e} (${sCity(s)}${sSell(s) !== sCity(s) ? ' → sold in ' + sSell(s) : ''})`, spent: Math.round(sSpent(s)), earned: Math.round(sEarned(s)) });
@@ -1134,10 +1159,11 @@ function buildRefineShop(s) {
   s.specAfter = { ...s.spec };
 }
 function refineNext(s) {
-  if (s.step === 0) { buildRefineShop(s); s.started = Date.now(); }
+  if (s.step === 0) { buildRefineShop(s); s.started = Date.now(); takeSnapshot(s); }
   if (s.step === 3) {  // refining done: save spec gains, prefill the sell step
     for (const t in s.specAfter) if (s.specAfter[t] > s.spec[t]) S.spec[s.mat][t] = s.specAfter[t];
     s.lines.forEach(l => { l.sold = l.made || l.n; l.price ||= price(itemId(l.t, l.e, rOut(s)), rSell(s, l), 'sell').v; });
+    s.sales ||= [];
   }
 }
 const opts = (list, v) => list.map(x => `<option ${x == v ? 'selected' : ''}>${x}</option>`).join('');
@@ -1203,18 +1229,20 @@ function refineBody(s) {
         <div class="row">${tiers.map(t => `<label>T${t} before → after<span class="row" style="gap:4px"><input type="number" class="spec" value="${s.spec[t]}" disabled>
           <input type="number" min="0" class="spec" data-s="specAfter.${t}" value="${s.specAfter[t]}"></span></label>`).join('')}</div>
         ${gained > 0 ? `<p class="pos pop">+${gained} spec level${gained > 1 ? 's' : ''} unlocked! 🎉</p>` : ''}
+        ${leftoverUI(s)}
         ${feeLog(s)}
         <div class="actions">${btn('back', '← Back', 1)}${btn('next', 'Done refining →')}</div>`;
     }
     case 4: {
       const p = sEarned(s) - sSpent(s);
       return `<h2>Sell your ${out}</h2>
-        <div class="wrap"><table><tr><th>Item</th><th>Selling</th><th>Price each</th><th>You get (after ${S.sellMode === 'order' ? 'tax + setup' : 'tax'})</th></tr>
-        ${s.lines.map((l, i) => `<tr><td>${icon(itemId(l.t, l.e, rOut(s)), rSell(s, l))}${label(l)}<select data-s="lines.${i}.sc" aria-label="Sell ${label(l)} in" style="margin-left:6px">${cityOpts(l.sc, `${rCity(s)} (refine city)`)}</select></td>
-          <td><input type="number" min="0" data-s="lines.${i}.sold" value="${l.sold}"></td>
-          <td><input type="number" min="0" data-s="lines.${i}.price" value="${l.price || ''}" placeholder="—"></td><td>${fmt(l.sold * l.price * sellMult())}</td></tr>`).join('')}</table></div>
-        <div class="cards">${card('Spent', fmt(sSpent(s)))}${card('Earned', fmt(sEarned(s)))}${card('Profit', fmt(p), `class="${cls(p)}"`)}</div>
-        <p class="hint">Prices are prefilled from the market in the city you pick. Change them to what you actually sold for. Keeping some to sell later? Lower "Selling" and log the rest in a later run.</p>
+        ${s.lines.map((l, i) => `<div class="row" style="align-items:center;margin-bottom:4px"><span>${label(l)} sells in</span>
+          <select data-s="lines.${i}.sc" aria-label="Sell ${label(l)} in">${cityOpts(l.sc, `${rCity(s)} (refine city)`)}</select></div>
+          ${bestCity(itemId(l.t, l.e, rOut(s)), rSell(s, l), `rsellat:${i}`)}`).join('')}
+        ${salesUI(s)}
+        ${movesHtml(s)}
+        <div class="cards">${card('Spent', fmt(sSpent(s)))}${card('Earned so far', fmt(sEarned(s)))}${card('Profit so far', fmt(p), `class="${cls(p)}"`)}${card('Left to sell', leftToSell(s))}</div>
+        <p class="hint">Prices are prefilled from the market in the city you pick. Change them to what you actually sold for.</p>
         <div class="actions">${btn('back', '← Back', 1)}${btn('finish', 'Finish session 🎉')}</div>`;
     }
     default: {
@@ -1224,10 +1252,106 @@ function refineBody(s) {
         <div class="cards">${card('Profit', '0', `class="${cls(p)}" data-to="${Math.round(p)}"`)}${card('Return on spend', spent ? (100 * p / spent).toFixed(1) + '%' : '—')}
           ${card('Time', mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`)}${card('Refined', s.lines.reduce((a, l) => a + l.made, 0))}</div>
         <p>${s.lines.map(l => `${l.made}× ${label(l)}`).join(' · ')}${gained > 0 ? ` · <span class="pos">+${gained} spec</span>` : ''}</p>
+        ${unsoldNote(s)}${keptValue(s) ? `<p class="hint">Kept materials worth ${fmt(keptValue(s))} for next time.</p>` : ''}
         <div class="actions" style="justify-content:center">${btn('back', '← Edit sales', 1)}${btn('abandon', 'Discard', 1)}${btn('save', 'Save to run log')}</div></div>`;
     }
   }
 }
+
+
+// ---------- session extras: sell in batches, best city, leftovers, market moves, learned odds ----------
+const soldOf = (s, k) => (s.sales || []).filter(x => x.k === k).reduce((a, x) => a + x.n, 0);
+// what can be sold: qualities for a craft, tiers for a refine
+function sellSlots(s) {
+  if (isRefine(s)) return s.lines.map((l, i) => ({ k: i, label: `T${l.t}.${l.e} ${rOut(s).toLowerCase()}`, id: itemId(l.t, l.e, rOut(s)),
+    made: l.sold, madePath: `lines.${i}.sold`, suggest: l.price, pricePath: `lines.${i}.price`, city: rSell(s, l) }));
+  const id = gearId(sg(), s.t, s.e);
+  return QUALITIES.map((q, i) => ({ k: i, label: q, id, made: s.sellN[i], madePath: `sellN.${i}`, suggest: s.sell[i], pricePath: `sell.${i}`, city: sSell(s) }));
+}
+const leftToSell = s => sellSlots(s).reduce((a, sl) => a + Math.max(0, sl.made - soldOf(s, sl.k)), 0);
+function sellAllLeft(s) {
+  const slots = sellSlots(s).filter(sl => sl.made - soldOf(s, sl.k) > 0), noPrice = slots.find(sl => !sl.suggest);
+  if (noPrice) return alert(`Type a price for ${noPrice.label} first`), false;
+  slots.forEach(sl => s.sales.push({ k: sl.k, n: sl.made - soldOf(s, sl.k), price: sl.suggest, city: sl.city, at: Date.now() }));
+  return true;
+}
+function bestCity(id, current, act) {
+  const here = price(id, current, 'sell').v;
+  const best = CITIES.map(c => ({ c, v: price(id, c, 'sell').v })).filter(x => x.v).sort((a, b) => b.v - a.v)[0];
+  if (!best || best.c === current || (here && best.v <= here * 1.03)) return '';
+  const go = `<button class="ghost sm" data-sact="${act}:${best.c}">Sell in ${best.c}</button>`;
+  const risk = best.c === 'Caerleon' ? ' ⚠ Caerleon means crossing red zones, so only worth it if the haul is safe' : '';
+  return `<p class="hint">💡 <b>${best.c}</b> pays ${fmt(best.v)}${here ? `, ${Math.round(100 * (best.v / here - 1))}% more than ${current}` : ` (no price in ${current})`}.${risk} ${go}</p>`;
+}
+function salesUI(s) {
+  s.sales ||= [];
+  const slots = sellSlots(s), name = k => slots.find(x => x.k === k)?.label || '?';
+  return `<div class="wrap"><table><tr><th>Item</th><th>To sell</th><th>Sold</th><th>Left</th><th>Price each</th></tr>
+    ${slots.map(sl => {
+      const sold = soldOf(s, sl.k), left = Math.max(0, sl.made - sold);
+      return `<tr class="${sl.made ? '' : 'dim'}"><td>${icon(sl.id, sl.city)}${esc(sl.label)}</td><td><input type="number" min="0" data-s="${sl.madePath}" value="${sl.made}"></td>
+        <td>${sold}</td><td>${left ? `<b>${left}</b>` : sl.made ? '✓' : '0'}</td><td><input type="number" min="0" data-s="${sl.pricePath}" value="${sl.suggest || ''}" placeholder="type price"></td></tr>`;
+    }).join('')}</table></div>
+    <h3>Record a sale</h3>
+    <div class="row">
+      <label>What<select id="saleK">${slots.filter(sl => sl.made).map(sl => `<option value="${sl.k}">${esc(sl.label)}</option>`).join('')}</select></label>
+      <label>How many<input type="number" min="1" id="saleN" placeholder="all left" style="width:100px"></label>
+      <label>Price each<input type="number" min="0" id="saleP" placeholder="price above" style="width:120px"></label>
+      <label>Where<select id="saleCity">${cityOpts('', 'As above')}</select></label>
+      ${btn('sale', 'Record sale')}${btn('sellall', 'Sold everything left', 1)}
+    </div>
+    ${s.sales.length ? `<div class="wrap"><table><tr><th>When</th><th>What</th><th>Qty</th><th>Price</th><th>Where</th><th>You got</th><th></th></tr>
+      ${s.sales.map((x, i) => `<tr><td class="dim">${new Date(x.at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</td><td>${esc(name(x.k))}</td>
+        <td>${x.n}</td><td>${fmt(x.price)}</td><td>${x.city}</td><td>${fmt(x.n * x.price * sellMult())}</td><td><button class="ghost sm" data-sact="saledel:${i}">✕</button></td></tr>`).join('')}</table></div>`
+      : '<p class="hint">Record each batch as it sells, today or days later. The session waits for you, and profit adds up as you go.</p>'}`;
+}
+function leftoverUI(s) {
+  const items = s.shop.map((x, i) => ({ x, i })).filter(({ x }) => x.id && x.price);
+  if (!items.length) return '';
+  return `<h3>Leftover materials</h3>
+    <p class="hint">Keeping some materials for next time (extra you bought, or returns you didn't use up)? Count them here. They come off this run's cost at the price you paid.</p>
+    <div class="wrap"><table><tr><th>Item</th><th>Kept</th><th>Worth</th></tr>
+    ${items.map(({ x, i }) => `<tr><td>${icon(x.id, x.city || sBuy(s))}${esc(x.name)}</td><td><input type="number" min="0" data-s="shop.${i}.left" value="${x.left || 0}"></td><td>${fmt((x.left || 0) * x.price)}</td></tr>`).join('')}</table></div>`;
+}
+const keptValue = s => s.shop.reduce((a, x) => a + (x.left || 0) * x.price, 0);
+// market snapshot at the start of a session, to show what moved while you worked
+function snapEntries(s) {
+  const outs = isRefine(s)
+    ? s.lines.map(l => ({ id: itemId(l.t, l.e, rOut(s)), city: rSell(s, l), side: 'sell', label: `T${l.t}.${l.e} ${rOut(s).toLowerCase()}` }))
+    : [{ id: gearId(sg(), s.t, s.e), city: sSell(s), side: 'sell', label: `${sg().n} T${s.t}.${s.e}` }];
+  const mats = s.shop.filter(x => x.id).map(x => ({ id: x.id, city: x.city || sBuy(s), side: 'buy', label: itemName(x.id) }));
+  return [...outs, ...mats].map(x => ({ ...x, key: `${x.id}|${x.city}|${x.side}` }));
+}
+function takeSnapshot(s) { s.snap = { at: Date.now(), p: Object.fromEntries(snapEntries(s).map(x => [x.key, price(x.id, x.city, x.side).v])) }; }
+function movesHtml(s) {
+  if (!s.snap) return '';
+  const hours = Math.round((Date.now() - s.snap.at) / 36e5);
+  const rows = snapEntries(s).map(x => ({ ...x, then: s.snap.p[x.key], now: price(x.id, x.city, x.side).v }))
+    .filter(x => x.then && x.now && Math.abs(x.now / x.then - 1) >= 0.03);
+  return `<h3>Market since you started <small class="dim">(${hours < 1 ? 'under an hour' : hours + 'h'} ago)</small></h3>` + (rows.length
+    ? `<ul class="checks">${rows.map(x => {
+        const up = x.now > x.then, good = up === (x.side === 'sell');
+        return `<li>${esc(x.label)} (${x.side === 'sell' ? 'selling' : 'buying'} in ${x.city}): ${fmt(x.then)} → <b class="${good ? 'pos' : 'neg'}">${fmt(x.now)} ${up ? '▲' : '▼'} ${Math.abs(Math.round(100 * (x.now / x.then - 1)))}%</b></li>`;
+      }).join('')}</ul>`
+    : '<p class="hint">Prices barely moved (under 3%).</p>');
+}
+const unsoldNote = s => { const n = s.sales ? leftToSell(s) : 0; return n ? `<p class="hint">${n} still unsold, not counted in profit. Go back to record them later, or save now.</p>` : ''; };
+// quality odds learned from finished craft sessions
+const pctOf = arr => { const t = arr.reduce((a, b) => a + b, 0); return t ? arr.map(n => +(100 * n / t).toFixed(1)) : null; };
+function oddsFor(g) {
+  if (!S.learnOdds) return S.odds;
+  const sum = a => a ? a.reduce((x, y) => x + y, 0) : 0, own = S.qstats[g.id], all = S.qstats._all;
+  return sum(own) >= 20 ? pctOf(own) : sum(all) >= 20 ? pctOf(all) : S.odds;
+}
+function renderLearned() {
+  const all = S.qstats._all, el = document.getElementById('learned');
+  if (!all) { el.innerHTML = '<p class="hint">Finish craft sessions and your real quality results will show up here.</p>'; return; }
+  const n = all.reduce((a, b) => a + b, 0), pc = pctOf(all);
+  el.innerHTML = `<p class="hint">Your results from ${n} crafts: ${QUALITIES.map((q, i) => `${q} ${pc[i]}%`).join(' · ')}</p>
+    <div class="row"><label class="chk"><input type="checkbox" data-k="learnOdds">Use my results for profit (per item once you've crafted 20+ of it, otherwise overall)</label>
+    <button class="ghost sm" id="learnCopy">Copy into the odds above</button></div>`;
+}
+document.addEventListener('click', ev => { if (ev.target.id === 'learnCopy') { S.odds = pctOf(S.qstats._all); save(); renderAll(); } });
 
 function sessionBody(s, g) {
   const city = g && sCity(s), pct = g && (100 * sRate(s)).toFixed(1) + '%', name = g && `${esc(g.n)} T${s.t}.${s.e}`;
@@ -1238,7 +1362,7 @@ function sessionBody(s, g) {
         const tmp = { ...s }; buildShop(tmp);
         const cost = sSpent(tmp), market = price(gearId(g, s.t, s.e), sSell(s), 'sell').v, sellP = s.sp || market, rev = s.n * sellP * sellMult();
         const missing = tmp.shop.some(x => !x.price) || !sellP;
-        est = `<h3>Prices <small class="dim">(type any that are missing or wrong)</small></h3>
+        est = `${bestCity(gearId(g, s.t, s.e), sSell(s), 'sellat')}<h3>Prices <small class="dim">(type any that are missing or wrong)</small></h3>
           <div class="wrap"><table><tr><th>Item</th><th>Need</th><th>Price each</th></tr>
           ${tmp.shop.map(x => `<tr><td>${icon(x.id, sBuy(s))}${esc(x.name)}</td><td>${x.need}</td>
             <td><input type="number" min="0" data-s="mp.${x.id}" value="${x.price || ''}" placeholder="type price"></td></tr>`).join('')}
@@ -1305,6 +1429,7 @@ function sessionBody(s, g) {
           ${btn('fill', 'Rest were Normal', 1)}
         </div>
         ${gained > 0 ? `<p class="pos pop">+${gained} spec level${gained > 1 ? 's' : ''} unlocked! 🎉</p>` : ''}
+        ${leftoverUI(s)}
         ${feeLog(s)}
         <div class="actions">${btn('back', '← Back', 1)}${btn('next', 'Done crafting →')}</div>`;
     }
@@ -1312,13 +1437,12 @@ function sessionBody(s, g) {
       const p = sEarned(s) - sSpent(s);
       return `<h2>Sell your ${name}</h2>
         <div class="row"><label>Selling in<select data-s="sellCity">${cityOpts(s.sellCity, `Craft city (${city})`)}</select></label></div>
-        <div class="wrap"><table><tr><th>Quality</th><th>Selling</th><th>Price each</th><th>You get (after ${S.sellMode === 'order' ? 'tax + setup' : 'tax'})</th></tr>
-        ${QUALITIES.map((q, i) => `<tr class="${s.crafted[i] || s.sellN[i] ? '' : 'dim'}"><td>${q}</td><td><input type="number" min="0" data-s="sellN.${i}" value="${s.sellN[i]}"></td>
-          <td><input type="number" min="0" data-s="sell.${i}" value="${s.sell[i] || ''}" placeholder="type price"></td><td>${fmt(s.sellN[i] * s.sell[i] * sellMult())}</td></tr>`).join('')}
-        ${s.jFull ? `<tr><td>Full journals</td><td><input type="number" min="0" data-s="jFull" value="${s.jFull}"></td>
-          <td><input type="number" min="0" data-s="jPrice" value="${s.jPrice || ''}" placeholder="—"></td><td>${fmt(s.jFull * s.jPrice * sellMult())}</td></tr>` : ''}
-        </table></div>
-        <div class="cards">${card('Spent', fmt(sSpent(s)))}${card('Earned', fmt(sEarned(s)))}${card('Profit', fmt(p), `class="${cls(p)}"`)}</div>
+        ${bestCity(gearId(g, s.t, s.e), sSell(s), 'sellat')}
+        ${salesUI(s)}
+        ${s.jFull ? `<h3>Full journals</h3><div class="row"><label>Sold<input type="number" min="0" data-s="jFull" value="${s.jFull}"></label>
+          <label>Price each<input type="number" min="0" data-s="jPrice" value="${s.jPrice || ''}" placeholder="type price"></label></div>` : ''}
+        ${movesHtml(s)}
+        <div class="cards">${card('Spent', fmt(sSpent(s)))}${card('Earned so far', fmt(sEarned(s)))}${card('Profit so far', fmt(p), `class="${cls(p)}"`)}${card('Left to sell', leftToSell(s))}</div>
         <p class="hint">Prices are prefilled from ${sSell(s)}'s market (sell orders or instant sell, from the top bar). Switch the city to compare, and change any price to what you actually sold for.</p>
         <div class="actions">${btn('back', '← Back', 1)}${btn('finish', 'Finish session 🎉')}</div>`;
     }
@@ -1328,6 +1452,7 @@ function sessionBody(s, g) {
         <div class="cards">${card('Profit', '0', `class="${cls(p)}" data-to="${Math.round(p)}"`)}${card('Return on spend', spent ? (100 * p / spent).toFixed(1) + '%' : '—')}
           ${card('Time', mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`)}${card('Crafted', s.crafted.reduce((a, b) => a + b, 0))}</div>
         <p>${QUALITIES.map((q, i) => s.crafted[i] ? `${s.crafted[i]}× ${q}` : '').filter(Boolean).join(' · ')}${gained > 0 ? ` · <span class="pos">+${gained} spec</span>` : ''}</p>
+        ${unsoldNote(s)}${keptValue(s) ? `<p class="hint">Kept materials worth ${fmt(keptValue(s))} for next time.</p>` : ''}
         <div class="actions" style="justify-content:center">${btn('back', '← Edit sales', 1)}${btn('abandon', 'Discard', 1)}${btn('save', 'Save to run log')}</div></div>`;
     }
   }
@@ -1454,6 +1579,7 @@ function renderAll() {
   document.getElementById('barToggle').textContent = `⚙ ${S.buyMode === 'order' ? 'Buy orders' : 'Instant buy'} · ${S.sellMode === 'order' ? 'Sell orders' : 'Instant sell'} · ${S.premium ? 'Premium' : 'No premium'}${S.useFocus ? ' · Focus' : ''} · ${S.maxAge ? S.maxAge + 'h' : 'any age'}`;
   const info = { craft: renderCraft, refine: renderRefine, flip: renderFlip, session: renderSession, log: renderLog }[S.tab]?.() || '';
   document.getElementById('status').textContent = [info, `tax ${tax()}%`, statusMsg].filter(Boolean).join(' · ');
+  if (S.tab === 'settings') renderLearned();
   renderSync();
   bind();
 }
@@ -1557,6 +1683,7 @@ function selfTest() {
   console.assert(near(rrr(18), 0.1525) && near(rrr(58), 0.3671) && near(rrr(33), 0.2481), 'return rate formula');
   console.assert(resId('T5_METALBAR{e}', 2) === 'T5_METALBAR_LEVEL2@2' && resId('T5_CAPE{ae}', 1) === 'T5_CAPE@1' && resId('T5_METALBAR{e}', 0) === 'T5_METALBAR', 'recipe ids');
   console.assert(itemId(5, 2, 'HIDE') === 'T5_HIDE_LEVEL2@2' && near(focusMult(10000), 0.5), 'item ids / focus');
+  console.assert(pctOf([3, 1, 0, 0, 0]).join() === '75,25,0,0,0' && soldOf({ sales: [{ k: 0, n: 2 }, { k: 1, n: 5 }, { k: 0, n: 3 }] }, 0) === 5, 'learned odds / sold count');
   console.assert(cumulative([{ date: '2026-01-02', spent: 10, earned: 30 }, { date: '2026-01-01', spent: 5, earned: 0 }]).map(p => p.y).join() === '-5,15', 'run log cumulative profit');
 }
 
