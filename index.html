@@ -138,7 +138,7 @@ nav i{font-style:normal;margin-right:4px}
 </head>
 <body>
 <header><h1>Albion Profit Calc · EU</h1><button id="install" hidden>Install app</button></header>
-<nav><button data-tab="refine"><i>🧵</i>Refining</button><button data-tab="craft"><i>⚒️</i>Crafting</button><button data-tab="session"><i>📋</i>Sessions</button><button data-tab="log"><i>📒</i>Run log</button><button data-tab="flip" class="extra"><i>💰</i>BM flip</button><button data-tab="tips" class="extra"><i>💡</i>Tips</button><button data-tab="settings" class="extra"><i>⚙️</i>Settings</button><button id="more" class="mob" aria-expanded="false"><i>⋯</i>More</button></nav>
+<nav><button data-tab="refine"><i>🧵</i>Refining</button><button data-tab="craft"><i>⚒️</i>Crafting</button><button data-tab="session"><i>📋</i>Sessions</button><button data-tab="food"><i>🍲</i>Food &amp; potions</button><button data-tab="log" class="extra"><i>📒</i>Run log</button><button data-tab="flip" class="extra"><i>💰</i>BM flip</button><button data-tab="tips" class="extra"><i>💡</i>Tips</button><button data-tab="settings" class="extra"><i>⚙️</i>Settings</button><button id="more" class="mob" aria-expanded="false"><i>⋯</i>More</button></nav>
 
 <section id="topbar">
   <div class="mob barsum"><button class="ghost" id="barToggle" aria-expanded="false"></button><button id="refresh2" aria-label="Refresh prices">↻</button></div>
@@ -207,6 +207,21 @@ nav i{font-style:normal;margin-right:4px}
   <section class="wrap"><table id="ctbl"></table>
     <p class="hint">Spec is per item and saved. It lowers focus cost; set quality odds in Settings if you want it to count toward sell value. Artifacts and tokens are never returned. Material prices are editable.</p>
   </section>
+</div>
+
+<div data-page="food">
+  <section>
+    <div class="row">
+      <label>Type<select data-k="kType"><option value="all">Food &amp; potions</option><option value="food">Food</option><option value="potions">Potions</option></select></label>
+      <label>Tier<select data-k="kTier"><option value="0">All</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+      <label>Enchant<select data-k="kEnch"><option value="-1">All</option><option>0</option><option>1</option><option>2</option><option>3</option></select></label>
+      <label>Craft in<select data-k="kCity" class="cities"><option value="">Home city</option></select></label>
+      <label>Buy in<select data-k="kBuy" class="cities"><option value="">Same as craft</option></select></label>
+      <label>Sell in<select data-k="kSell" class="cities"><option value="">Same as craft</option></select></label>
+    </div>
+    <p class="hint">Food makes 10 per craft and potions 5, and both sell in big numbers every day, so <b>Daily potential</b> (profit per item × what you could sell today without flooding the market) matters more than margin. Enchanted versions (.1–.3) add fish sauce or alchemy extract. Tap <b>Craft</b> to start a session.</p>
+  </section>
+  <section class="wrap"><table id="ktbl"></table></section>
 </div>
 
 <div data-page="session"><section id="session"></section></div>
@@ -317,6 +332,7 @@ nav i{font-style:normal;margin-right:4px}
     <div class="row">
       <label>Usage fee (per 100 nutrition)<input type="number" data-k="stationFee"></label>
       <label>Nutrition factor<input type="number" data-k="nutrition" step="0.0005"></label>
+      <label title="Where you craft items that have no city bonus (food, potions, capes…)">Home city<select data-k="home" class="cities"></select></label>
     </div>
     <p class="hint">Fee = item value × nutrition factor × usage fee / 100. Item values come from the game files.</p>
     <h3>Focus efficiency (FCE)</h3>
@@ -365,7 +381,8 @@ const DEFAULTS = {
   fcePerLevel: 250, fceItem: 250, fceTree: 30,
   odds: [100, 0, 0, 0, 0], maxAge: 72,
   budget: 1000000, planShare: 20, shopAround: false,
-  sort: { refine: { k: 'item', d: 1 }, craft: { k: 'profit', d: -1 }, flip: { k: 'profit', d: -1 } },
+  sort: { refine: { k: 'item', d: 1 }, craft: { k: 'profit', d: -1 }, flip: { k: 'profit', d: -1 }, food: { k: 'day', d: -1 } },
+  kType: 'all', kTier: '0', kEnch: '-1', kCity: '', kBuy: '', kSell: '', home: 'Martlock',
   fTier: '4', fEnch: '0', fQual: '0', fBuy: '',
   log: [], session: null, history: {}, qstats: {}, learnOdds: false,
   rShow: { 4: true, 5: true, 6: true, 7: true, 8: true },
@@ -525,7 +542,7 @@ const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const oldest = ds => ds.every(Boolean) ? Math.min(...ds) : 0;
 const cmp = (x, y) => typeof x === 'string' ? x.localeCompare(y) : x - y;
 const SORT_KEYS = {
-  profit: c => c.profit, margin: c => c.profit / (c.cost + c.fee), cost: c => c.cost, focus: c => c.focus, age: c => -c.age,
+  profit: c => c.profit, margin: c => c.profit / (c.cost + c.fee), vol: c => c.vol, day: c => c.day, cost: c => c.cost, focus: c => c.focus, age: c => -c.age,
 };
 function sortRows(rows, tab, itemKey) {
   const { k, d } = S.sort[tab], f = k === 'item' ? itemKey : SORT_KEYS[k];
@@ -584,10 +601,14 @@ function renderRefine() {
 // ---------- daily run planner ----------
 const HISTORY_API = 'https://europe.albion-online-data.com/api/v2/stats/history/';
 async function dailyVolume(ids, cities) {
-  const res = await fetch(`${HISTORY_API}${[...ids].join(',')}.json?time-scale=24&qualities=1&locations=${encodeURIComponent([...cities].join(','))}`);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const list = [...ids], all = [];
+  for (let i = 0; i < list.length; i += 80) {
+    const res = await fetch(`${HISTORY_API}${list.slice(i, i + 80).join(',')}.json?time-scale=24&qualities=1&locations=${encodeURIComponent([...cities].join(','))}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    all.push(...await res.json());
+  }
   const V = {}, weekAgo = Date.now() - 7 * 864e5;
-  for (const h of await res.json()) {
+  for (const h of all) {
     const days = h.data.filter(d => new Date(d.timestamp + 'Z') > weekAgo);
     V[`${h.item_id}|${h.location}`] = days.reduce((a, d) => a + d.item_count, 0) / 7;
   }
@@ -668,27 +689,33 @@ const budgetLeftNote = left => left > 0.1 * S.budget ? `${fmt(left)} silver left
 
 // ---------- crafting ----------
 const gearId = (g, t, e) => `T${t}_${g.id}` + (e ? `@${e}` : '');
-const resId = (tmpl, e) => tmpl.replace('{e}', e ? `_LEVEL${e}@${e}` : '').replace('{ae}', e ? `@${e}` : '');
-const craftCity = g => S.cCity || S.craftCity[g.cc] || 'Caerleon';
+const resId = (tmpl, e) => tmpl.replace('{e}', e ? `_LEVEL${e}@${e}` : '').replace('{ae}', e ? `@${e}` : '').replace('{l}', e ? `_LEVEL${e}` : '');
+// enchant-only ingredients ({l}: fish sauce, alchemy extract) aren't part of the .0 recipe
+const recipeOf = (g, t, e) => g.r[t].filter(([tmpl]) => e || !tmpl.includes('{l}'));
+const gName = (g, t) => g.nt?.[t] || g.n;  // food/potion names change per tier
+const isCons = g => g.g === 'consumables';
+const CRYSTAL = '*crystal';
+const craftCity = g => S.cCity || S.craftCity[g.cc] || S.home;
 const craftRate = (g, focus) => rrr(S.baseBonus + (S.craftCity[g.cc] === craftCity(g) ? S.craftBonus : 0) + (focus ? S.focusBonus : 0) + S.dailyBonus);
 const spec = g => S.craftSpec[g.id] || 0;
 let treeSpec = {};  // craft category -> summed spec of its items, rebuilt each render
 const craftFocus = (g, t, e) => g.f[t][e] * focusMult(spec(g) * S.fceItem + (treeSpec[g.cc] - spec(g)) * S.fceTree);
 const SCAN = '*', SCAN_LIMIT = 200;
-const catGear = () => S.cCat === SCAN ? D.gear : D.gear.filter(g => g.c === S.cCat);
+const catGear = () => S.cCat === SCAN ? D.gear : S.cCat === CRYSTAL ? D.gear.filter(g => /_CRYSTAL$/.test(g.id)) : D.gear.filter(g => g.c === S.cCat);
 const craftRows = () => catGear().flatMap(g => g.t.flatMap(t => ENCH.map(e => ({ g, t, e }))))
   .filter(({ g, t, e }) => (S.cTier === '0' || +S.cTier === t) && (S.cEnch === '-1' || +S.cEnch === e) && g.f[t][e] !== null);
 
-function calcCraft({ g, t, e }, focus) {
-  const city = craftCity(g), bc = S.cBuyCity || city, sc = S.cSellCity || city, r = craftRate(g, focus);
-  const mats = g.r[t].map(([tmpl, n, ret]) => ({ p: price(resId(tmpl, e), bc, 'buy'), n, ret, id: resId(tmpl, e) }));
+function calcCraft({ g, t, e }, focus, ov) {
+  const city = ov?.city || craftCity(g), bc = ov ? ov.bc || city : S.cBuyCity || city, sc = ov ? ov.sc || city : S.cSellCity || city;
+  const r = rrr(S.baseBonus + (S.craftCity[g.cc] === city ? S.craftBonus : 0) + (focus ? S.focusBonus : 0) + S.dailyBonus);
+  const mats = recipeOf(g, t, e).map(([tmpl, n, ret]) => ({ p: price(resId(tmpl, e), bc, 'buy'), n, ret, id: resId(tmpl, e) }));
   const cost = mats.reduce((a, m) => a + m.p.v * m.n * (m.ret ? 1 - r : 1), 0) * buyMult();
   const id = gearId(g, t, e), sell = price(id, sc, 'sell');
   let best = 0, ev = 0;
-  oddsFor(g).forEach((pct, i) => { best = price(id, sc, 'sell', i + 1).v || best; ev += pct / 100 * best; });
+  (isCons(g) ? [100, 0, 0, 0, 0] : oddsFor(g)).forEach((pct, i) => { best = price(id, sc, 'sell', i + 1).v || best; ev += pct / 100 * best; });
   const fee = stationFee(g.v[t][e]);
   const ok = !!(mats.every(m => m.p.v) && sell.v);
-  const revenue = (sell.key in O ? sell.v : ev) * sellMult();
+  const revenue = (sell.key in O ? sell.v : ev) * sellMult() * (g.a || 1);  // food makes 10, potions 5 per craft
   return { g, t, e, r, mats, sell, cost, fee, ok, profit: revenue - cost - fee, city,
     focus: craftFocus(g, t, e), age: oldest([...mats.map(m => m.p.d), sell.d]) };
 }
@@ -697,7 +724,7 @@ function renderCraft() {
   treeSpec = {};
   D.gear.forEach(g => treeSpec[g.cc] = (treeSpec[g.cc] || 0) + spec(g));
   const scan = S.cCat === SCAN;
-  const all = sortRows(craftRows().map(x => calcCraft(x, S.useFocus)), 'craft', c => c.g.n + c.t + c.e);
+  const all = sortRows(craftRows().map(x => calcCraft(x, S.useFocus)), 'craft', c => gName(c.g, c.t) + c.t + c.e);
   const rows = scan ? all.slice(0, SCAN_LIMIT) : all;
   const q = S.qty, h = (l, k) => th('craft', l, k);
   document.getElementById('ctbl').innerHTML =
@@ -705,7 +732,7 @@ function renderCraft() {
     rows.map(c => {
       const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcCraft(c, false).profit) / c.focus).toFixed(1) : '—'}</td>` : '';
       const mats = c.mats.map(m => `<span title="${m.n}× ${m.id}">${m.n}×${priceInput(m.p, m.id)}</span>`).join('');
-      return `<tr><td>${icon(gearId(c.g, c.t, c.e), S.cSellCity || c.city)}${c.g.n} <span class="dim">T${c.t}.${c.e}${scan ? ' · ' + c.city : ''}</span></td>` +
+      return `<tr><td>${icon(gearId(c.g, c.t, c.e), S.cSellCity || c.city)}${esc(gName(c.g, c.t))} <span class="dim">T${c.t}.${c.e}${c.g.a ? ` ×${c.g.a}` : ''}${scan ? ' · ' + c.city : ''}</span></td>` +
         `<td><input type="number" class="spec" min="0" max="120" data-spec="${c.g.id}" value="${spec(c.g)}"></td>` +
         `<td><div class="mats">${mats}</div></td><td>${priceInput(c.sell)}</td>` +
         (c.ok ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td>` + profitCells(c.profit, c.cost + c.fee, q) : '<td colspan="5" class="dim">missing price</td>') +
@@ -739,7 +766,7 @@ async function fetchCraftPrices(rows, normalOnly) {
   rows.forEach(({ g, t, e }) => {
     const city = craftCity(g);
     buyAt.add(S.cBuyCity || city); sellAt.add(S.cSellCity || city); gear.add(gearId(g, t, e));
-    g.r[t].forEach(([tmpl]) => mats.add(resId(tmpl, e)));
+    recipeOf(g, t, e).forEach(([tmpl]) => mats.add(resId(tmpl, e)));
   });
   await fetchPrices(mats, '1', buyAt, 'materials');
   // big scans: Normal quality only, otherwise the response is huge
@@ -757,6 +784,7 @@ async function refresh(clearOverrides) {
   if (clearOverrides) O = {};
   if (S.tab === 'flip') return flipLoaded ? scanFlip() : renderAll();
   if (S.tab === 'session') return sessionPrices();
+  if (S.tab === 'food') return loadFood();
   if (!['refine', 'craft'].includes(S.tab)) return renderAll();
   statusMsg = 'loading prices…'; renderAll();
   try {
@@ -814,7 +842,7 @@ function itemName(id) {
   const [base, e = 0] = id.split('@'), m = base.match(/^T(\d)_(.+?)(?:_LEVEL\d)?$/);
   if (!m) return id;
   const g = D.gear.find(x => x.id === m[2]);
-  return `${g ? g.n : m[2].toLowerCase().replace(/_/g, ' ')} T${m[1]}.${e}`;
+  return `${g ? gName(g, +m[1]) : m[2].toLowerCase().replace(/_/g, ' ')} T${m[1]}.${e}`;
 }
 function openHistory(id, city) {
   const dlg = document.getElementById('hist');
@@ -929,7 +957,7 @@ const JOURNAL = {
 };
 const journalType = g => JOURNAL[g.c] || JOURNAL[g.cc] || 'TOOLMAKER';
 const sg = () => D.gear.find(g => g.id === S.session?.gid);
-const sCity = s => s.city || S.craftCity[sg().cc] || 'Caerleon';
+const sCity = s => s.city || S.craftCity[sg().cc] || S.home;
 const sRate = s => rrr(S.baseBonus + (S.craftCity[sg().cc] === sCity(s) ? S.craftBonus : 0) + (S.useFocus ? S.focusBonus : 0) + S.dailyBonus);
 const jId = (s, kind) => `T${s.t}_JOURNAL_${journalType(sg())}_${kind}`;
 // journals trade thinly: fall back to the best price in any city
@@ -974,7 +1002,7 @@ function newSession() {
 }
 function buildShop(s) {
   const g = sg(), r = sRate(s), je = jId(s, 'EMPTY');
-  s.shop = g.r[s.t].map(([tmpl, n, ret]) => {
+  s.shop = recipeOf(g, s.t, s.e).map(([tmpl, n, ret]) => {
     const id = resId(tmpl, s.e);
     return { id, name: itemName(id), need: Math.ceil(s.n * n * (ret ? 1 - r : 1)), price: matPrice(s, id), got: false };
   });
@@ -997,7 +1025,7 @@ async function sessionPrices() {
   }
   if (!g) return;
   try {
-    await fetchPrices([...g.r[s.t].map(([tmpl]) => resId(tmpl, s.e)), jId(s, 'EMPTY'), jId(s, 'FULL'), ...FOODS.map(f => f.id)], '1', CITIES, 'materials');
+    await fetchPrices([...recipeOf(g, s.t, s.e).map(([tmpl]) => resId(tmpl, s.e)), jId(s, 'EMPTY'), jId(s, 'FULL'), ...FOODS.map(f => f.id)], '1', CITIES, 'materials');
     await fetchPrices([gearId(g, s.t, s.e)], '1,2,3,4,5', CITIES, 'gear');
     statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
   } catch (err) { statusMsg = 'price fetch failed (' + err.message + ')'; }
@@ -1006,9 +1034,11 @@ async function sessionPrices() {
 function sessionInput(el) {
   const s = S.session, path = el.dataset.s;
   if (path === 'item') {
-    const g = D.gear.find(x => x.n.toLowerCase() === el.value.trim().toLowerCase());
+    const v = el.value.trim().toLowerCase(), named = x => [x.n, ...Object.values(x.nt || {})].some(n => n.toLowerCase() === v);
+    const g = D.gear.find(named);
     if (!g) return;
-    Object.assign(s, { gid: g.id, t: g.t[0], e: 0 });
+    const t = +(Object.entries(g.nt || {}).find(([, n]) => n.toLowerCase() === v)?.[0] || g.t[0]);
+    Object.assign(s, { gid: g.id, t, e: 0 });
     save(); return sessionPrices();
   }
   if (!s.kind) s.mp ||= {};  // sessions started before editable prices existed
@@ -1044,6 +1074,7 @@ function sessionAction(action) {
       if (s.specAfter > s.specBefore) S.craftSpec[s.gid] = s.specAfter;
       s.sellN = [...s.crafted];
       if (!s.sellN.some(Boolean)) s.sellN[0] = s.n;  // counters skipped: assume all Normal
+      if (isCons(sg())) s.sellN = s.sellN.map(n => n * (sg().a || 1));  // crafts -> items
       prefillSell(s);
     }
     s.step++;
@@ -1068,6 +1099,7 @@ function sessionAction(action) {
   else if (act === 'saledel') s.sales.splice(+arg, 1);
   else if (act === 'inc') { s.crafted[arg]++; popQ = +arg; }
   else if (act === 'dec') { s.crafted[arg] = Math.max(0, s.crafted[arg] - 1); popQ = +arg; }
+  else if (act === 'cadj') { s.crafted[0] = Math.max(0, s.crafted[0] + +arg); popQ = 0; }
   else if (act === 'fill') { s.crafted[0] += Math.max(0, s.n - s.crafted.reduce((a, b) => a + b, 0)); popQ = 0; }
   else if (act === 'extra') s.shop.push({ id: '', name: '', need: 1, price: 0, got: false });
   else if (act === 'food') {
@@ -1090,10 +1122,10 @@ function sessionAction(action) {
   else if (act === 'save') {
     const g = sg(), made = s.crafted.reduce((a, b) => a + b, 0), key = `${s.gid}|${s.t}|${s.e}`;
     const h = S.history[key] ||= { gid: s.gid, t: s.t, e: s.e, times: 0, crafted: 0 };
-    [s.gid, '_all'].forEach(k => { const q = S.qstats[k] ||= [0, 0, 0, 0, 0]; s.crafted.forEach((n, i) => q[i] += n); });
+    if (!isCons(g)) [s.gid, '_all'].forEach(k => { const q = S.qstats[k] ||= [0, 0, 0, 0, 0]; s.crafted.forEach((n, i) => q[i] += n); });
     Object.assign(h, { times: h.times + 1, crafted: h.crafted + made, last: today(), city: sSell(s), soldAt: s.sell[0],
       unitProfit: made ? (sEarned(s) - sSpent(s)) / made : 0 });
-    addLog({ kind: 'craft', title: `${s.n}× ${g.n} T${s.t}.${s.e} (${sCity(s)}${sSell(s) !== sCity(s) ? ' → sold in ' + sSell(s) : ''})`, spent: Math.round(sSpent(s)), earned: Math.round(sEarned(s)) });
+    addLog({ kind: isCons(g) ? 'cook' : 'craft', title: `${s.n}× ${gName(g, s.t)} T${s.t}.${s.e} (${sCity(s)}${sSell(s) !== sCity(s) ? ' → sold in ' + sSell(s) : ''})`, spent: Math.round(sSpent(s)), earned: Math.round(sEarned(s)) });
     S.session = null; S.tab = 'log';
   }
   save(); renderAll();
@@ -1265,8 +1297,8 @@ const soldOf = (s, k) => (s.sales || []).filter(x => x.k === k).reduce((a, x) =>
 function sellSlots(s) {
   if (isRefine(s)) return s.lines.map((l, i) => ({ k: i, label: `T${l.t}.${l.e} ${rOut(s).toLowerCase()}`, id: itemId(l.t, l.e, rOut(s)),
     made: l.sold, madePath: `lines.${i}.sold`, suggest: l.price, pricePath: `lines.${i}.price`, city: rSell(s, l) }));
-  const id = gearId(sg(), s.t, s.e);
-  return QUALITIES.map((q, i) => ({ k: i, label: q, id, made: s.sellN[i], madePath: `sellN.${i}`, suggest: s.sell[i], pricePath: `sell.${i}`, city: sSell(s) }));
+  const id = gearId(sg(), s.t, s.e), cons = isCons(sg());
+  return (cons ? ['Normal'] : QUALITIES).map((q, i) => ({ k: i, label: cons ? gName(sg(), s.t) : q, id, made: s.sellN[i], madePath: `sellN.${i}`, suggest: s.sell[i], pricePath: `sell.${i}`, city: sSell(s) }));
 }
 const leftToSell = s => sellSlots(s).reduce((a, sl) => a + Math.max(0, sl.made - soldOf(s, sl.k)), 0);
 function sellAllLeft(s) {
@@ -1318,7 +1350,7 @@ const keptValue = s => s.shop.reduce((a, x) => a + (x.left || 0) * x.price, 0);
 function snapEntries(s) {
   const outs = isRefine(s)
     ? s.lines.map(l => ({ id: itemId(l.t, l.e, rOut(s)), city: rSell(s, l), side: 'sell', label: `T${l.t}.${l.e} ${rOut(s).toLowerCase()}` }))
-    : [{ id: gearId(sg(), s.t, s.e), city: sSell(s), side: 'sell', label: `${sg().n} T${s.t}.${s.e}` }];
+    : [{ id: gearId(sg(), s.t, s.e), city: sSell(s), side: 'sell', label: `${gName(sg(), s.t)} T${s.t}.${s.e}` }];
   const mats = s.shop.filter(x => x.id).map(x => ({ id: x.id, city: x.city || sBuy(s), side: 'buy', label: itemName(x.id) }));
   return [...outs, ...mats].map(x => ({ ...x, key: `${x.id}|${x.city}|${x.side}` }));
 }
@@ -1354,19 +1386,19 @@ function renderLearned() {
 document.addEventListener('click', ev => { if (ev.target.id === 'learnCopy') { S.odds = pctOf(S.qstats._all); save(); renderAll(); } });
 
 function sessionBody(s, g) {
-  const city = g && sCity(s), pct = g && (100 * sRate(s)).toFixed(1) + '%', name = g && `${esc(g.n)} T${s.t}.${s.e}`;
+  const city = g && sCity(s), pct = g && (100 * sRate(s)).toFixed(1) + '%', name = g && `${esc(gName(g, s.t))} T${s.t}.${s.e}`, a = g?.a || 1;
   switch (s.step) {
     case 0: {
       let est = '';
       if (g) {
         const tmp = { ...s }; buildShop(tmp);
-        const cost = sSpent(tmp), market = price(gearId(g, s.t, s.e), sSell(s), 'sell').v, sellP = s.sp || market, rev = s.n * sellP * sellMult();
+        const cost = sSpent(tmp), market = price(gearId(g, s.t, s.e), sSell(s), 'sell').v, sellP = s.sp || market, rev = s.n * a * sellP * sellMult();
         const missing = tmp.shop.some(x => !x.price) || !sellP;
         est = `${bestCity(gearId(g, s.t, s.e), sSell(s), 'sellat')}<h3>Prices <small class="dim">(type any that are missing or wrong)</small></h3>
           <div class="wrap"><table><tr><th>Item</th><th>Need</th><th>Price each</th></tr>
           ${tmp.shop.map(x => `<tr><td>${icon(x.id, sBuy(s))}${esc(x.name)}</td><td>${x.need}</td>
             <td><input type="number" min="0" data-s="mp.${x.id}" value="${x.price || ''}" placeholder="type price"></td></tr>`).join('')}
-          <tr><td>${icon(gearId(g, s.t, s.e), sSell(s))}<b>Sells for</b> (Normal, ${sSell(s)})</td><td>${s.n}</td>
+          <tr><td>${icon(gearId(g, s.t, s.e), sSell(s))}<b>Sells for</b> (${a > 1 ? `each, ${a} per craft` : 'Normal'}, ${sSell(s)})</td><td>${s.n * a}</td>
             <td><input type="number" min="0" data-s="sp" value="${sellP || ''}" placeholder="type price"></td></tr></table></div>
           <div class="cards">${card('Materials + fee', fmt(cost))}${card('Sales (after tax)', sellP ? fmt(rev) : '—')}
             ${card('Expected profit', missing ? '—' : fmt(rev - cost), `class="${cls(rev - cost)}"`)}${card('Return rate', pct)}</div>
@@ -1374,7 +1406,7 @@ function sessionBody(s, g) {
       }
       return `<h2>What are we crafting?</h2>
         <div class="row">
-          <label>Item<input list="gearList" data-s="item" value="${g ? esc(g.n) : ''}" placeholder="Search, e.g. Broadsword" style="width:240px"></label>
+          <label>Item<input list="gearList" data-s="item" value="${g ? esc(gName(g, s.t)) : ''}" placeholder="Search, e.g. Broadsword" style="width:240px"></label>
           ${g ? `<label>Tier<select data-s="t">${g.t.map(t => `<option ${t === s.t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
           <label>Enchant<select data-s="e">${ENCH.filter(e => g.f[s.t][e] != null).map(e => `<option ${e === s.e ? 'selected' : ''}>${e}</option>`).join('')}</select></label>
           <label>Crafts<input type="number" min="1" data-s="n" value="${s.n}"></label>
@@ -1419,7 +1451,9 @@ function sessionBody(s, g) {
       const total = s.crafted.reduce((a, b) => a + b, 0), gained = s.specAfter - s.specBefore;
       return `<h2>Crafting ${name}</h2>
         <div class="bar big"><div style="width:${Math.min(100, 100 * total / s.n)}%"></div></div><p class="hint">${total} / ${s.n} crafted</p>
-        <div class="qgrid">${QUALITIES.map((q, i) => `<div class="qcell q${i}"><small>${q}</small><div class="counter">
+        <div class="qgrid">${isCons(g) ? `<div class="qcell"><small>Crafts done (×${a} = ${s.crafted[0] * a} items)</small><div class="counter">
+          <button class="ghost" data-sact="cadj:-10">−10</button><button class="ghost" data-sact="dec:0">−</button><b class="${popQ === 0 ? 'pop' : ''}">${s.crafted[0]}</b>
+          <button data-sact="inc:0">+</button><button data-sact="cadj:10">+10</button></div></div>` : QUALITIES.map((q, i) => `<div class="qcell q${i}"><small>${q}</small><div class="counter">
           <button class="ghost" data-sact="dec:${i}" aria-label="One less ${q}">−</button><b class="${popQ === i ? 'pop' : ''}">${s.crafted[i]}</b>
           <button data-sact="inc:${i}" aria-label="One more ${q}">+</button></div></div>`).join('')}</div>
         <div class="row">
@@ -1466,7 +1500,7 @@ function historyHtml() {
     ${rows.map(({ g, t, e, h }) => {
       const c = calcCraft({ g, t, e }, S.useFocus), now = c.sell.v;
       const trend = now && h.soldAt ? (now > h.soldAt * 1.05 ? ' <span class="pos">▲</span>' : now < h.soldAt * 0.95 ? ' <span class="neg">▼</span>' : '') : '';
-      return `<tr><td>${icon(gearId(g, t, e), h.city)}${esc(g.n)} <span class="dim">T${t}.${e}</span></td><td>${h.times}</td><td>${h.crafted}</td>
+      return `<tr><td>${icon(gearId(g, t, e), h.city)}${esc(gName(g, t))} <span class="dim">T${t}.${e}</span></td><td>${h.times}</td><td>${h.crafted}</td>
         <td class="${cls(h.unitProfit)}">${fmt(h.unitProfit)}</td><td>${h.soldAt ? fmt(h.soldAt) : '—'}</td><td>${now ? fmt(now) + trend : '—'}</td>
         <td class="${c.ok ? cls(c.profit) : 'dim'}">${c.ok ? fmt(c.profit) : '—'}</td><td><button class="sm" data-sact="again:${g.id}|${t}|${e}">Craft again</button></td></tr>`;
     }).join('')}</table></div>
@@ -1493,7 +1527,7 @@ async function craftToday() {
       return { ...c, vol, n, total: n * c.profit };
     }).filter(c => c.n > 0).sort((a, b) => b.total - a.total).slice(0, 8);
     out.innerHTML = todayPicks.length ? `<h3>Best crafts today</h3><div class="cards">${todayPicks.map((c, i) => `
-      <div class="card today" style="animation-delay:${i * 60}ms">${icon(gearId(c.g, c.t, c.e), sc(c))}<b>${esc(c.g.n)} T${c.t}.${c.e}</b>
+      <div class="card today" style="animation-delay:${i * 60}ms">${icon(gearId(c.g, c.t, c.e), sc(c))}<b>${esc(gName(c.g, c.t))} T${c.t}.${c.e}</b>
         <small>craft in ${c.city} · sells ${Math.round(c.vol)}/day</small>
         <small>${fmt(c.profit)} per craft · ${(100 * c.profit / (c.cost + c.fee)).toFixed(0)}% margin</small>
         <span class="pos">≈ ${fmt(c.total)} for ${c.n} crafts</span>
@@ -1534,7 +1568,7 @@ function renderSession() {
   else el.querySelectorAll('[data-to]').forEach(b => b.textContent = fmt(+b.dataset.to));
   popQ = -1;
   if (isRefine(s)) return `Refining session: ${s.mat} in ${rCity(s)}`;
-  return g ? `Session: ${s.n}× ${g.n} T${s.t}.${s.e} in ${sCity(s)}` : '';
+  return g ? `Session: ${s.n}× ${gName(g, s.t)} T${s.t}.${s.e} in ${sCity(s)}` : '';
 }
 
 // ---------- feature wiring ----------
@@ -1577,7 +1611,7 @@ function renderAll() {
   document.querySelectorAll('nav button[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
   document.getElementById('more').classList.toggle('on', !!document.querySelector(`nav .extra[data-tab="${S.tab}"]`));
   document.getElementById('barToggle').textContent = `⚙ ${S.buyMode === 'order' ? 'Buy orders' : 'Instant buy'} · ${S.sellMode === 'order' ? 'Sell orders' : 'Instant sell'} · ${S.premium ? 'Premium' : 'No premium'}${S.useFocus ? ' · Focus' : ''} · ${S.maxAge ? S.maxAge + 'h' : 'any age'}`;
-  const info = { craft: renderCraft, refine: renderRefine, flip: renderFlip, session: renderSession, log: renderLog }[S.tab]?.() || '';
+  const info = { food: renderFood, craft: renderCraft, refine: renderRefine, flip: renderFlip, session: renderSession, log: renderLog }[S.tab]?.() || '';
   document.getElementById('status').textContent = [info, `tax ${tax()}%`, statusMsg].filter(Boolean).join(' · ');
   if (S.tab === 'settings') renderLearned();
   renderSync();
@@ -1586,7 +1620,7 @@ function renderAll() {
 
 const getK = p => p.split('.').reduce((a, k) => a[k], S);
 const setK = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((a, k) => a[k], S)[last] = v; };
-const REFETCH = ['cCat', 'cTier', 'cEnch', 'cBuyCity', 'cSellCity', 'cCity', 'fTier', 'fEnch', 'fQual', 'fBuy'];
+const REFETCH = ['kType', 'kTier', 'kEnch', 'kCity', 'kBuy', 'kSell', 'cCat', 'cTier', 'cEnch', 'cBuyCity', 'cSellCity', 'cCity', 'fTier', 'fEnch', 'fQual', 'fBuy'];
 function bind() {
   document.querySelectorAll('[data-k]').forEach(el => {
     const v = getK(el.dataset.k);
@@ -1628,10 +1662,10 @@ document.addEventListener('click', ev => {
 function buildStaticUI() {
   document.querySelectorAll('select.cities').forEach(s => s.insertAdjacentHTML('beforeend', CITIES.map(c => `<option>${c}</option>`).join('')));
   document.querySelectorAll('select.bm').forEach(s => s.insertAdjacentHTML('beforeend', '<option>Black Market</option>'));
-  document.body.insertAdjacentHTML('beforeend', `<datalist id="gearList">${[...new Set(D.gear.map(g => g.n))].sort().map(n => `<option value="${esc(n)}">`).join('')}</datalist>`);
+  document.body.insertAdjacentHTML('beforeend', `<datalist id="gearList">${[...new Set(D.gear.flatMap(g => g.nt ? Object.values(g.nt) : [g.n]))].sort().map(n => `<option value="${esc(n)}">`).join('')}</datalist>`);
   const groups = {};
   D.gear.forEach(g => (groups[g.g] ??= new Set()).add(g.c));
-  document.getElementById('cats').innerHTML = `<option value="${SCAN}">★ Scan everything</option>` + Object.entries(groups).map(([grp, cs]) =>
+  document.getElementById('cats').innerHTML = `<option value="${SCAN}">★ Scan everything</option><option value="${CRYSTAL}">💎 Crystal gear</option>` + Object.entries(groups).map(([grp, cs]) =>
     `<optgroup label="${grp}">${[...cs].sort().map(c => `<option value="${c}">${c.replace(/^accessoires_capes_/, 'cape: ').replace(/_/g, ' ')}</option>`).join('')}</optgroup>`).join('');
   document.getElementById('odds').innerHTML = QUALITIES.map((q, i) => `<label>${q}<input type="number" step="0.1" data-k="odds.${i}"></label>`).join('');
   S.craftCity = Object.fromEntries([...new Set(D.gear.map(g => g.cc))].map(cc => [cc, S.craftCity[cc] || '']));
@@ -1676,11 +1710,65 @@ function renderCityBonuses() {
     <details><summary class="hint">Categories with no city bonus (${without.length})</summary><div class="row" style="margin-top:6px">${without.map(pick).join('')}</div></details>`;
 }
 
+// ---------- food & potions ----------
+let foodVol = {}, foodLoaded = false;
+const foodRows = () => D.gear.filter(g => isCons(g) && (S.kType === 'all' || g.c === S.kType))
+  .flatMap(g => g.t.flatMap(t => ENCH.map(e => ({ g, t, e }))))
+  .filter(({ g, t, e }) => (S.kTier === '0' || +S.kTier === t) && (S.kEnch === '-1' || +S.kEnch === e) && g.f[t][e] != null);
+const foodCities = g => { const city = S.kCity || S.craftCity[g.cc] || S.home; return { city, bc: S.kBuy || city, sc: S.kSell || city }; };
+async function loadFood() {
+  const rows = foodRows(), mats = new Set(), outs = new Set();
+  rows.forEach(({ g, t, e }) => { outs.add(gearId(g, t, e)); recipeOf(g, t, e).forEach(([tmpl]) => mats.add(resId(tmpl, e))); });
+  statusMsg = ''; renderAll();
+  try {
+    await fetchPrices(mats, '1', CITIES, 'ingredients');
+    await fetchPrices(outs, '1', CITIES, 'food & potions');
+    setStatus('checking sales volume…');
+    foodVol = await dailyVolume(outs, new Set(rows.map(r => foodCities(r.g).sc)));
+    foodLoaded = true;
+    statusMsg = 'prices loaded ' + new Date().toLocaleTimeString();
+  } catch (err) { statusMsg = 'price fetch failed (' + err.message + ')'; }
+  renderAll();
+}
+function foodCalc(x) {
+  const ov = foodCities(x.g), c = calcCraft(x, S.useFocus, ov), a = x.g.a || 1;
+  const vol = foodVol[`${gearId(x.g, x.t, x.e)}|${ov.sc}`] || 0, each = c.profit / a;
+  // what you could sell today without flooding: planner's share of daily sales
+  return { ...c, ...ov, a, vol, each, day: c.ok ? Math.max(0, each) * Math.floor(vol * S.planShare / 100) : 0 };
+}
+function renderFood() {
+  const rows = foodRows().map(foodCalc), h = (l, k) => th('food', l, k);
+  const shown = sortRows(rows, 'food', c => gName(c.g, c.t) + c.e);
+  document.getElementById('ktbl').innerHTML =
+    `<tr>${h('Item', 'item')}<th>Makes</th><th>Ingredients (price each)</th><th>Sell each</th>${h('Cost/craft', 'cost')}${h('Profit/craft', 'profit')}<th>Per item</th>${h('Margin', 'margin')}${h('Sold/day', 'vol')}${h('Daily potential', 'day')}${h('Age', 'age')}<th></th></tr>` +
+    shown.map(c => {
+      const mats = c.mats.map(m => `<span title="${m.n}× ${esc(itemName(m.id))}">${m.n}×${priceInput(m.p, itemName(m.id))}</span>`).join('');
+      return `<tr><td>${icon(gearId(c.g, c.t, c.e), c.sc)}${esc(gName(c.g, c.t))} <span class="dim">T${c.t}.${c.e}</span></td><td>${c.a}</td>
+        <td><div class="mats">${mats}</div></td><td>${priceInput(c.sell)}</td>` +
+        (c.ok ? `<td>${fmt(c.cost + c.fee)}</td><td class="${cls(c.profit)}">${fmt(c.profit)}</td><td class="${cls(c.each)}">${fmt(c.each)}</td><td class="${cls(c.profit)}">${(100 * c.profit / (c.cost + c.fee)).toFixed(1)}%</td>`
+          : '<td colspan="4" class="dim">missing price, type it in</td>') +
+        `<td>${foodLoaded ? fmt(c.vol) : '—'}</td><td class="${c.day > 0 ? 'pos' : 'dim'}">${foodLoaded && c.ok ? fmt(c.day) : '—'}</td>
+        <td>${ageText([...c.mats.map(m => m.p.d), c.sell.d])}</td><td><button class="sm" data-food="${c.g.id}|${c.t}|${c.e}">Craft</button></td></tr>`;
+    }).join('') || '<tr><td class="dim">Nothing matches this filter.</td></tr>';
+  return `${rows.filter(c => c.ok && c.profit > 0).length} profitable of ${rows.length} · daily potential = profit per item × ${S.planShare}% of daily sales`;
+}
+document.addEventListener('click', ev => {
+  const key = ev.target.closest('[data-food]')?.dataset.food;
+  if (!key) return;
+  const [gid, t, e] = key.split('|'), g = D.gear.find(x => x.id === gid), c = foodCalc({ g, t: +t, e: +e });
+  if (S.session && !confirm('Replace the session you have running?')) return;
+  newSession();
+  const crafts = Math.ceil(Math.floor(c.vol * S.planShare / 100) / c.a) || 10;
+  Object.assign(S.session, { gid, t: +t, e: +e, n: Math.min(100, crafts), city: S.kCity, buyCity: S.kBuy, sellCity: S.kSell });
+  S.tab = 'session'; save(); sessionPrices();
+});
+
 function selfTest() {
   const plan = planRun([{ profit: 10, spend: 100, outId: 'A', sc: 'X' }, { profit: 30, spend: 100, outId: 'B', sc: 'X' }], { 'A|X': 50, 'B|X': 10 }, 1000, 50);
   console.assert(plan[0].outId === 'B' && plan[0].n === 5 && plan[1].n === 5, 'planner: best margin first, capped by volume, then budget');
   const near = (a, b) => Math.abs(a - b) < 0.001;
   console.assert(near(rrr(18), 0.1525) && near(rrr(58), 0.3671) && near(rrr(33), 0.2481), 'return rate formula');
+  console.assert(resId('T1_FISHSAUCE{l}', 2) === 'T1_FISHSAUCE_LEVEL2' && recipeOf({ r: { 4: [['T4_TURNIP', 24], ['T1_FISHSAUCE{l}', 30]] } }, 4, 0).length === 1, 'enchant-only ingredients');
   console.assert(resId('T5_METALBAR{e}', 2) === 'T5_METALBAR_LEVEL2@2' && resId('T5_CAPE{ae}', 1) === 'T5_CAPE@1' && resId('T5_METALBAR{e}', 0) === 'T5_METALBAR', 'recipe ids');
   console.assert(itemId(5, 2, 'HIDE') === 'T5_HIDE_LEVEL2@2' && near(focusMult(10000), 0.5), 'item ids / focus');
   console.assert(pctOf([3, 1, 0, 0, 0]).join() === '75,25,0,0,0' && soldOf({ sales: [{ k: 0, n: 2 }, { k: 1, n: 5 }, { k: 0, n: 3 }] }, 0) === 5, 'learned odds / sold count');

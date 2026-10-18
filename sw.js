@@ -1,6 +1,6 @@
 // Offline support: our own files are network-first (so updates show up), with the cache as fallback.
 // Price API and sync calls go straight to the network.
-const CACHE = 'albion-calc-v4';
+const CACHE = 'albion-calc-v5';
 const SHELL = ['./', 'index.html', 'data.json', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', ev => ev.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));

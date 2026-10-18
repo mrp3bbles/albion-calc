@@ -6,12 +6,14 @@ Rerun after a game patch:
   python build_data.py items.json names.json data.json
 """
 import json
+import re
 import sys
 
 TIERS = range(4, 9)
 ENCH = range(5)
 PREFIXES = ("Adept's ", "Expert's ", "Master's ", "Grandmaster's ", "Elder's ")
-GROUPS = ("weapons", "armors", "head", "shoes", "offhands", "capes", "bags", "gathering")
+GROUPS = ("weapons", "armors", "head", "shoes", "offhands", "capes", "bags", "gathering", "consumables")
+CONSUMABLES = ("food", "potions")  # cooking + alchemy; other consumables aren't crafted for profit
 
 items_path, names_path, out_path = sys.argv[1:4]
 raw = json.load(open(items_path, encoding="utf-8"))["items"]
@@ -20,7 +22,7 @@ names = {x["UniqueName"]: (x.get("LocalizedNames") or {}).get("EN-US") for x in 
 
 
 def recipe(base, t, e):
-    """First recipe for T{t}_{base} at enchant e, as [(resource_id, count, returnable)], plus focus."""
+    """First recipe for T{t}_{base} at enchant e: [(resource_id, count, returnable)], focus, amount crafted."""
     x = items.get(f"T{t}_{base}")
     if not x:
         return None
@@ -40,7 +42,7 @@ def recipe(base, t, e):
     for r in res:
         rid, lvl = r["@uniquename"], int(r.get("@enchantmentlevel", 0))
         out.append((rid + (f"@{lvl}" if lvl else ""), int(r["@count"]), r.get("@maxreturnamount") != "0"))
-    return out, int(req.get("@craftingfocus", 0))
+    return out, int(req.get("@craftingfocus", 0)), int(req.get("@amountcrafted", 1))
 
 
 def value(rid):
@@ -49,17 +51,24 @@ def value(rid):
 
 
 def template(rid, t, e):
-    """T5_METALBAR_LEVEL2@2 -> T5_METALBAR{e}, T5_CAPE@2 -> T5_CAPE{ae}: one recipe per tier for every enchant."""
-    return rid.replace(f"_LEVEL{e}@{e}", "{e}").replace(f"@{e}", "{ae}") if e else rid
+    """One recipe per tier for every enchant: T5_METALBAR_LEVEL2@2 -> T5_METALBAR{e}, T5_CAPE@2 -> T5_CAPE{ae},
+    T1_FISHSAUCE_LEVEL2 -> T1_FISHSAUCE{l} (food/potion enchant ingredients)."""
+    return rid.replace(f"_LEVEL{e}@{e}", "{e}").replace(f"@{e}", "{ae}").replace(f"_LEVEL{e}", "{l}") if e else rid
 
 
 gear = []
-bases = sorted({k[3:] for k, x in items.items() if k.startswith("T4_") and x.get("@shopcategory") in GROUPS and x.get("craftingrequirements")})
+def wanted(x):
+    cat = x.get("@shopcategory")
+    return cat in GROUPS and x.get("craftingrequirements") and (cat != "consumables" or x.get("@shopsubcategory1") in CONSUMABLES)
+
+
+bases = sorted({k[3:] for k, x in items.items() if re.match(r"T[1-8]_", k) and wanted(x)})
 for base in bases:
-    x4 = items[f"T4_{base}"]
-    tmpl, focus, val, tiers = {}, {}, {}, []
+    first = next(items[f"T{t}_{base}"] for t in range(1, 9) if f"T{t}_{base}" in items)
+    cons = first["@shopcategory"] == "consumables"
+    tmpl, focus, val, tiers, amount = {}, {}, {}, [], 1
     ok = True
-    for t in TIERS:
+    for t in (range(1, 9) if cons else TIERS):
         if not recipe(base, t, 0):
             continue
         tiers.append(t)
@@ -69,7 +78,7 @@ for base in bases:
             if not r:
                 focus[t].append(None); val[t].append(None)
                 continue
-            res, f = r
+            res, f, amount = r
             tm = [[template(rid, t, e), n, int(ret)] for rid, n, ret in res]
             if t not in tmpl or (e == 1 and not any("{" in r[0][3:] for r in tmpl[t])):
                 tmpl[t] = tm  # the enchant-1 recipe shows which inputs scale with enchant
@@ -77,16 +86,20 @@ for base in bases:
                 ok = False
             focus[t].append(f)
             val[t].append(sum(n * value(rid) for rid, n, _ in res))
-    if not tiers or not ok:
+    if not tiers:
+        continue
+    if not ok:
         print("skipped", base, file=sys.stderr)
         continue
-    name = names.get(f"T4_{base}") or base
+    name = names.get(f"T{tiers[0]}_{base}") or base
     for p in PREFIXES:
         name = name.removeprefix(p)
     gear.append({
-        "id": base, "n": name, "g": x4["@shopcategory"], "c": x4.get("@shopsubcategory1"),
-        "cc": x4.get("@craftingcategory") or x4.get("@shopsubcategory1"),
-        "r": tmpl, "t": tiers, "f": focus, "v": val,
+        "id": base, "n": name, "g": first["@shopcategory"], "c": first.get("@shopsubcategory1"),
+        "cc": first.get("@craftingcategory") or first.get("@shopsubcategory1"),
+        "r": tmpl, "t": tiers, "f": focus, "v": val, **({"a": amount} if amount > 1 else {}),
+        # food/potion names change per tier (Bean / Turnip / Potato Salad)
+        **({"nt": {t: names.get(f"T{t}_{base}") or name for t in tiers}} if cons else {}),
     })
 
 ref = {}
