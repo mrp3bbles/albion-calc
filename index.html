@@ -629,14 +629,14 @@ function renderRefine() {
   const rows = sortRows(TIERS.filter(t => S.rShow[t]).flatMap(t => ENCH.map(e => calcRefine(t, e, S.useFocus))), 'refine', c => c.t * 10 + c.e);
   const q = S.qty, h = (l, k) => th('refine', l, k);
   document.getElementById('tbl').innerHTML =
-    `<tr>${h('Item', 'item')}<th>Raw</th><th>Prev</th><th>Sell</th>${h('Cost/craft', 'cost')}<th>Fee</th>${h('Profit/craft', 'profit')}${h('Margin', 'margin')}<th>×${q}</th><th>Buy for ×${q}</th>${h('Focus', 'focus')}${S.useFocus ? '<th>Silver/focus</th>' : ''}${h('Age', 'age')}</tr>` +
+    `<tr>${h('Item', 'item')}<th>Raw</th><th>Prev</th><th>Sell</th>${h('Cost/craft', 'cost')}<th>Fee</th>${h('Profit/craft', 'profit')}${h('Margin', 'margin')}<th>×${q}</th><th>Buy for ×${q}</th>${h('Focus', 'focus')}${S.useFocus ? '<th>Silver/focus</th>' : ''}${h('Age', 'age')}<th></th></tr>` +
     rows.map(c => {
       const fc = c.focus;
       const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcRefine(c.t, c.e, false).profit) / fc).toFixed(1) : '—'}</td>` : '';
       return `<tr><td>${icon(itemId(c.t, c.e, MATS[S.mat].out), sellCity())}T${c.t}.${c.e}</td>` +
         `<td>${priceInput(c.raw)}</td><td>${priceInput(c.prev)}</td><td>${priceInput(c.out)}</td>` +
         (c.ok ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td>` + profitCells(c.profit, c.cost + c.fee, q) : '<td colspan="5" class="dim">missing price</td>') +
-        `<td class="dim">${Math.ceil(q * c.n * (1 - c.r))} raw + ${Math.ceil(q * (1 - c.r))} T${c.t - 1}</td><td class="dim">${fmt(fc)}</td>${spf}<td>${ageText([c.raw.d, c.prev.d, c.out.d])}</td></tr>`;
+        `<td class="dim">${Math.ceil(q * c.n * (1 - c.r))} raw + ${Math.ceil(q * (1 - c.r))} T${c.t - 1}</td><td class="dim">${fmt(fc)}</td>${spf}<td>${ageText([c.raw.d, c.prev.d, c.out.d])}</td><td><button class="sm" data-refine="${c.t}|${c.e}">Refine</button></td></tr>`;
     }).join('');
   document.getElementById('spec').innerHTML = '<tr><th></th>' + TIERS.map(t => `<th>T${t}</th>`).join('') + '</tr>' +
     ['leather', 'cloth'].map(mat =>
@@ -765,7 +765,7 @@ function renderCraft() {
   const rows = scan ? all.slice(0, SCAN_LIMIT) : all;
   const q = S.qty, h = (l, k) => th('craft', l, k);
   document.getElementById('ctbl').innerHTML =
-    `<tr>${h('Item', 'item')}<th>Spec</th><th>Materials (price each)</th><th>Sell</th>${h('Cost/craft', 'cost')}<th>Fee</th>${h('Profit/craft', 'profit')}${h('Margin', 'margin')}<th>×${q}</th>${h('Focus', 'focus')}${S.useFocus ? '<th>Silver/focus</th>' : ''}${h('Age', 'age')}</tr>` +
+    `<tr>${h('Item', 'item')}<th>Spec</th><th>Materials (price each)</th><th>Sell</th>${h('Cost/craft', 'cost')}<th>Fee</th>${h('Profit/craft', 'profit')}${h('Margin', 'margin')}<th>×${q}</th>${h('Focus', 'focus')}${S.useFocus ? '<th>Silver/focus</th>' : ''}${h('Age', 'age')}<th></th></tr>` +
     rows.map(c => {
       const spf = S.useFocus ? `<td>${c.ok ? ((c.profit - calcCraft(c, false).profit) / c.focus).toFixed(1) : '—'}</td>` : '';
       const mats = c.mats.map(m => `<span title="${m.n}× ${m.id}">${m.n}×${priceInput(m.p, m.id)}</span>`).join('');
@@ -773,7 +773,7 @@ function renderCraft() {
         `<td><input type="number" class="spec" min="0" max="120" data-spec="${c.g.id}" value="${spec(c.g)}"></td>` +
         `<td><div class="mats">${mats}</div></td><td>${priceInput(c.sell)}</td>` +
         (c.ok ? `<td>${fmt(c.cost)}</td><td>${fmt(c.fee)}</td>` + profitCells(c.profit, c.cost + c.fee, q) : '<td colspan="5" class="dim">missing price</td>') +
-        `<td class="dim">${fmt(c.focus)}</td>${spf}<td>${ageText([...c.mats.map(m => m.p.d), c.sell.d])}</td></tr>`;
+        `<td class="dim">${fmt(c.focus)}</td>${spf}<td>${ageText([...c.mats.map(m => m.p.d), c.sell.d])}</td><td><button class="sm" data-craft="${c.g.id}|${c.t}|${c.e}">Craft</button></td></tr>`;
     }).join('') || '<tr><td class="dim">Nothing craftable for this filter</td></tr>';
   if (scan) return `Scanned ${all.length} crafts${all.length > SCAN_LIMIT ? `, showing top ${SCAN_LIMIT}` : ''} · each item crafted in its bonus city · Normal quality only`;
   const g = catGear()[0];
@@ -1895,6 +1895,22 @@ document.addEventListener('change', ev => {
   if (S.stock[k]) { S.stock[k][f] = +ev.target.value || 0; save(); renderAll(); }
 });
 document.getElementById('todayRefresh').onclick = () => loadToday(true);
+
+// row buttons in the Refining and Crafting tables start a session with that tab's cities and the Crafts amount
+document.addEventListener('click', ev => {
+  const craft = ev.target.closest('[data-craft]')?.dataset.craft, refine = ev.target.closest('[data-refine]')?.dataset.refine;
+  if (!craft && !refine) return;
+  if (S.session && !confirm('Replace the session you have running?')) return;
+  if (craft) {
+    const [gid, t, e] = craft.split('|');
+    newSession();
+    Object.assign(S.session, { gid, t: +t, e: +e, n: S.qty || 10, city: S.cCity, buyCity: S.cBuyCity, sellCity: S.cSellCity === 'Black Market' ? '' : S.cSellCity });
+  } else {
+    const [t, e] = refine.split('|').map(Number);
+    newRefineSession(S.mat, [rLine(t, e, S.qty || 50, S.buyCity, S.sellCity)], S.refineCity);
+  }
+  S.tab = 'session'; save(); scrollTo(0, 0); sessionPrices();
+});
 
 // ---------- UI wiring ----------
 function renderAll() {
