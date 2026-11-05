@@ -150,6 +150,9 @@ body.simple nav [data-adv]{display:none!important}
 body:not(.simple) .simple-only{display:none!important}
 body.simple [data-page=refine]>section:not(.simple-only),body.simple [data-page=craft]>section:not(.simple-only),body.simple [data-page=food]>section:not(.simple-only){display:none}
 .big-profit{font-size:26px;font-weight:700;margin:2px 0}
+.amt{display:flex;align-items:center;gap:6px;margin:4px 0;flex-wrap:wrap}
+.amt input{width:84px!important;text-align:center}
+.amt button{min-width:42px}
 select.mini{width:auto;min-height:36px;padding:4px 8px}
 .card small b{font-size:inherit;color:var(--text)}
 @media (max-width:640px){#tCraft .cards,#tFood .cards{grid-template-columns:1fr}}
@@ -161,7 +164,7 @@ details>summary{cursor:pointer;padding:6px 0}
 </style>
 </head>
 <body>
-<header><h1>Albion Profit Calc · EU</h1><button id="install" hidden>Install app</button></header>
+<header><h1>Albion Profit Calc · EU</h1><button id="install" class="ghost sm">📱 Install</button></header>
 <nav><button data-tab="today"><i>🏠</i>Today</button><button data-tab="refine"><i>🧵</i>Refining</button><button data-tab="craft"><i>⚒️</i>Crafting</button><button data-adv data-tab="session"><i>📋</i>Sessions</button><button data-tab="food"><i>🍲</i>Food</button><button data-adv data-tab="stock" class="extra"><i>📦</i>Stock</button><button data-tab="log" class="extra"><i>📒</i>Run log</button><button data-adv data-tab="flip" class="extra"><i>💰</i>BM flip</button><button data-tab="tips" class="extra"><i>💡</i>Tips</button><button data-tab="settings" class="extra"><i>⚙️</i>Settings</button><button id="more" class="mob" aria-expanded="false"><i>⋯</i>More</button></nav>
 <div id="toast" role="status" hidden><span></span><button class="ghost sm">Undo</button></div>
 
@@ -186,7 +189,6 @@ details>summary{cursor:pointer;padding:6px 0}
       <span class="row" style="gap:8px">Tiers
         <label class="chk"><input type="checkbox" data-k="rShow.4">T4</label><label class="chk"><input type="checkbox" data-k="rShow.5">T5</label><label class="chk"><input type="checkbox" data-k="rShow.6">T6</label><label class="chk"><input type="checkbox" data-k="rShow.7">T7</label><label class="chk"><input type="checkbox" data-k="rShow.8">T8</label>
       </span>
-      <label>Budget<input type="number" data-k="budget" min="0" step="100000"></label>
     </div>
   </section>
   <section class="simple-only" id="srefine"></section>
@@ -226,7 +228,6 @@ details>summary{cursor:pointer;padding:6px 0}
     <div class="row">
       <label>Tier<select data-k="cTier"><option value="0">All (slower)</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
       <label>Enchant<select data-k="cEnch"><option value="-1">All</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
-      <label>Budget<input type="number" data-k="budget" min="0" step="100000"></label>
     </div>
   </section>
   <section class="simple-only" id="scraft"></section>
@@ -256,7 +257,6 @@ details>summary{cursor:pointer;padding:6px 0}
   <section class="simple-only">
     <div class="row">
       <label>Show<select data-k="kType"><option value="all">Food &amp; potions</option><option value="food">Food</option><option value="potions">Potions</option></select></label>
-      <label>Budget<input type="number" data-k="budget" min="0" step="100000"></label>
     </div>
   </section>
   <section class="simple-only" id="sfood"></section>
@@ -281,11 +281,10 @@ details>summary{cursor:pointer;padding:6px 0}
   <section id="tSession"></section>
   <section>
     <div class="row" style="align-items:end">
-      <label>My budget (silver)<input type="number" data-k="budget" min="0" step="100000"></label>
       <button class="ghost" id="todayRefresh">↻ Refresh</button>
       <button class="ghost" id="allTools"></button>
     </div>
-    <p class="hint">Each pick fits your budget and only uses amounts that actually sell. Open "What to buy" for the shopping list, then tap ✓ Did it when you're done to keep score.</p>
+    <p class="hint">Set how many on each card with − / +. Open "What to buy" for the shopping list, or tap ▶ Start for a step-by-step checklist.</p>
     <div id="tStock"></div>
   </section>
   <section><h3>🧵 Best refining run</h3><div id="tRefine"></div></section>
@@ -383,6 +382,11 @@ details>summary{cursor:pointer;padding:6px 0}
   </section>
 </div>
 
+<dialog id="instDlg">
+  <header><h3 style="margin:0">📱 Install the app</h3><button class="ghost" data-closeinst>Close</button></header>
+  <div id="instBody"></div>
+</dialog>
+
 <dialog id="hist">
   <header><h3 id="histTitle" style="margin:0"></h3><button class="ghost" id="histClose">Close</button></header>
   <div class="row" style="margin:8px 0">
@@ -459,6 +463,7 @@ const API = 'https://europe.albion-online-data.com/api/v2/stats/prices/';
 const SYNC_API = 'https://albion-calc-sync.aobakwemothabi47.workers.dev/';
 const CITIES = ['Martlock', 'Lymhurst', 'Bridgewatch', 'Fort Sterling', 'Thetford', 'Caerleon', 'Brecilien'];
 const QUALITIES = ['Normal', 'Good', 'Outstanding', 'Excellent', 'Masterpiece'];
+const BASE_ODDS = [68.9, 25, 5, 1, 0.1];  // game data: CraftingQualityChances 689/250/50/10/1
 const MATS = {
   leather: { raw: 'HIDE', out: 'LEATHER', bonus: 'Martlock' },
   cloth:   { raw: 'FIBER', out: 'CLOTH', bonus: 'Lymhurst' },
@@ -483,7 +488,7 @@ const DEFAULTS = {
   baseBonus: 18, cityBonus: 40, craftBonus: 15, focusBonus: 59, dailyBonus: 0,
   taxNoPrem: 8, taxPrem: 4, setup: 2.5, stationFee: 400, nutrition: 0.1125,
   fcePerLevel: 250, fceItem: 250, fceTree: 30,
-  odds: [100, 0, 0, 0, 0], maxAge: 72,
+  odds: [100, 0, 0, 0, 0], maxAge: 72, amt: {}, tree: {},
   budget: 1000000, planShare: 20, shopAround: false,
   sort: { refine: { k: 'item', d: 1 }, craft: { k: 'profit', d: -1 }, flip: { k: 'profit', d: -1 }, food: { k: 'day', d: -1 } },
   kType: 'all', kTier: '0', kEnch: '-1', kCity: '', kBuy: '', kSell: '', home: 'Martlock',
@@ -807,7 +812,7 @@ function calcCraft({ g, t, e }, focus, ov) {
   const cost = mats.reduce((a, m) => a + m.p.v * m.n * (m.ret ? 1 - r : 1), 0) * buyMult();
   const id = gearId(g, t, e), sell = price(id, sc, 'sell');
   let best = 0, ev = 0;
-  (isCons(g) ? [100, 0, 0, 0, 0] : oddsFor(g)).forEach((pct, i) => { best = price(id, sc, 'sell', i + 1).v || best; ev += pct / 100 * best; });
+  (isCons(g) ? [100, 0, 0, 0, 0] : S.simple ? BASE_ODDS : oddsFor(g)).forEach((pct, i) => { best = price(id, sc, 'sell', i + 1).v || best; ev += pct / 100 * best; });
   const fee = stationFee(g.v[t][e], city);
   const ok = !!(mats.every(m => m.p.v) && sell.v);
   const revenue = (sell.key in O ? sell.v : ev) * sellMult() * (g.a || 1);  // food makes 10, potions 5 per craft
@@ -1743,8 +1748,16 @@ document.getElementById('histClose').onclick = () => document.getElementById('hi
 document.getElementById('histCity').onchange = loadHistory;
 document.getElementById('histDays').onchange = loadHistory;
 let installPrompt;
-addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); installPrompt = ev; document.getElementById('install').hidden = false; if (D.gear.length) renderAll(); });
-document.getElementById('install').onclick = async () => { installPrompt?.prompt(); await installPrompt?.userChoice; document.getElementById('install').hidden = true; };
+addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); installPrompt = ev; if (D.gear.length) renderAll(); });
+// the browser's own install pop-up when it has offered one; otherwise a pop-up with the steps for this phone
+document.getElementById('install').onclick = async () => {
+  if (installPrompt) { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; return renderAll(); }
+  document.getElementById('instBody').innerHTML = installSteps() + `<p class="hint">A website can't install itself: the browser has to offer it.
+    Chrome usually starts offering it after you've used the site for a minute or two, so try this button again later.
+    Until then, bookmark the page or keep it open in a tab.</p>`;
+  document.getElementById('instDlg').showModal();
+};
+document.addEventListener('click', ev => { if (ev.target.closest('[data-closeinst]')) document.getElementById('instDlg').close(); });
 
 // ---------- undo (instead of "are you sure?") ----------
 let undoTimer;
@@ -1915,8 +1928,25 @@ function todayBuyList(items, foot) {
 const craftBuy = (c, n) => c.mats.map(m => ({ id: m.id, qty: Math.ceil(n * m.n * (m.ret ? 1 - c.r : 1)), price: m.p.v, city: c.bc }));
 const doneBtn = (kind, title, spent, profit) =>
   `<button class="ghost sm" data-done="${kind}|${esc(title)}|${Math.round(spent)}|${Math.round(profit)}">✓ Did it</button>`;
-const fitBudget = (perCraft, n) => Math.max(0, Math.min(n, Math.floor(S.budget / perCraft)));
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+// how many: your number once you've set one, otherwise a suggestion that the market can actually absorb
+const amount = (key, suggest) => Math.max(1, S.amt[key] || suggest || 1);
+const stepper = (path, n, unit, step = 1) => `<div class="amt"><button class="ghost sm" data-amt="${path}" data-d="${-step}" aria-label="Fewer">−</button>
+  <input type="number" min="1" data-amtset="${path}" value="${n}" aria-label="How many"><button class="ghost sm" data-amt="${path}" data-d="${step}" aria-label="More">+</button><span class="dim">${unit}</span></div>`;
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-amt]');
+  if (!b) return;
+  const inp = b.closest('.amt').querySelector('input');
+  setK(b.dataset.amt, Math.max(1, (+inp.value || 0) + +b.dataset.d)); save(); renderAll();
+});
+document.addEventListener('change', ev => {
+  const path = ev.target.dataset.amtset;
+  if (path) { setK(path, Math.max(1, +ev.target.value || 1)); save(); queueRender(); }
+});
+// spec: a tree level (e.g. Sword crafter, Tanner) and a level for the individual item / tier
+const ccTitle = cc => ccName(cc).replace(/^./, ch => ch.toUpperCase());
+function specGet(k) { const [kind, a, b] = k.split(':'); return kind === 'gear' ? S.craftSpec[a] || 0 : kind === 'rt' ? S.spec[a]?.[b] || 0 : S.tree[k] || 0; }
+function specSet(k, v) { const [kind, a, b] = k.split(':'); if (kind === 'gear') S.craftSpec[a] = v; else if (kind === 'rt') (S.spec[a] ||= {})[b] = v; else S.tree[k] = v; }
 
 // every card registers what a Run needs; ▶ Start turns it into a checklist
 let cardData = [];
@@ -1924,51 +1954,60 @@ function cardActions(d, advBtn = '') {
   const i = cardData.push(d) - 1;
   return `<div class="actions" style="justify-content:flex-start"><button data-start="${i}">▶ Start</button>${doneBtn(d.kind, d.title, d.spend, d.profit)}${S.simple ? '' : advBtn}</div>`;
 }
-function pickCard(d, iconId, iconCity, name, line, advBtn) {
+function pickCard(d, iconId, iconCity, name, line, advBtn, amt = '') {
   return `<div class="card today">${icon(iconId, iconCity)}<b>${esc(name)}</b>
-    <span class="big-profit ${cls(d.profit)}">${d.profit >= 0 ? '+' : ''}${fmt(d.profit)}</span><small>${line}</small>
+    <span class="big-profit ${cls(d.profit)}">${d.profit >= 0 ? '+' : ''}${fmt(d.profit)}</span>${amt}<small>${line}</small>
     ${todayBuyList(d.buy, `Costs ≈ ${fmt(d.spend)} with fees.`)}${cardActions(d, advBtn)}</div>`;
 }
-function craftCard(c, n, kind, advBtn) {
+function craftCard(c, n, kind, advBtn, path) {
   const per = c.cost + c.fee, nm = `${gName(c.g, c.t)} T${c.t}.${c.e}`;
   const d = { kind, title: `${n}× ${nm}`, spend: n * per, profit: n * c.profit, buy: craftBuy(c, n),
     make: `Craft ${plural(n, 'time')}${c.g.a ? ` (${n * c.g.a} items)` : ''} in ${c.city}`, sell: `Sell in ${c.sc} at ~${fmt(c.sell.v)} each`,
-    sellItems: [{ id: gearId(c.g, c.t, c.e), qty: n * (c.g.a || 1) }], sellCity: c.sc };
-  return pickCard(d, gearId(c.g, c.t, c.e), c.sc, nm,
-    `${plural(n, 'craft')}${c.g.a ? ` (${n * c.g.a} items)` : ''} in <b>${c.city}</b>, sell in <b>${c.sc}</b> at ~${fmt(c.sell.v)} each`, advBtn);
+    sellItems: [{ id: gearId(c.g, c.t, c.e), qty: n * (c.g.a || 1) }], sellCity: c.sc,
+    spec: { tree: `cc:${c.g.cc}`, treeName: `${ccTitle(c.g.cc)} tree level`, item: `gear:${c.g.id}`, itemName: `${gName(c.g, c.t)} spec` } };
+  return pickCard(d, gearId(c.g, c.t, c.e), c.sc, nm, `craft in <b>${c.city}</b>, sell in <b>${c.sc}</b> at ~${fmt(c.sell.v)} each`, advBtn,
+    stepper(path, n, c.g.a ? `crafts = ${n * c.g.a} items` : plural(n, 'craft').replace(/^\d+ /, '')));
+}
+function refineCard(c, n, path) {
+  const m = MATS[S.mat], out = m.out.toLowerCase();
+  const d = { kind: 'refine', title: `${S.mat} T${c.t}.${c.e}×${n}`, spend: n * c.spend, profit: n * c.profit, buy: refineBuy(c, n),
+    make: `Refine ${n}× T${c.t}.${c.e} ${out} in ${refineCity()} (keep refining the returns)`, sell: `Sell in ${c.sc}`,
+    sellItems: [{ id: c.outId, qty: n }], sellCity: c.sc,
+    spec: { tree: `ref:${S.mat}`, treeName: `${S.mat === 'leather' ? 'Tanner' : 'Weaver'} level`, item: `rt:${S.mat}:${c.t}`, itemName: `T${c.t} ${out} spec` } };
+  return pickCard(d, c.outId, c.sc, `T${c.t}.${c.e} ${out}`, `refine in <b>${refineCity()}</b>, sell in <b>${c.sc}</b>`, '', stepper(path, n, 'refines', 10));
 }
 function refineBuy(c, n) {
   const m = MATS[S.mat];
   return [{ id: itemId(c.t, c.e, m.raw), qty: Math.ceil(n * RAW_COUNT[c.t] * (1 - c.r)), price: c.raw.v, city: c.bc },
     { id: c.t === 4 ? `T3_${m.out}` : itemId(c.t - 1, c.e, m.out), qty: Math.ceil(n * (1 - c.r)), price: c.prev.v, city: c.bc }];
 }
-function planCard(plan) {
+function refineCards(plan, max) {
   if (!plan) return '<p class="hint">Looking…</p>';
   if (plan.error) return `<p class="hint neg">${plan.error}</p>`;
-  if (!plan.picks.length) return '<p class="hint">Nothing profitable to refine for your budget right now.</p>';
-  const m = MATS[S.mat], what = plan.picks.map(c => `T${c.t}.${c.e}×${c.n}`).join(', '), sells = [...new Set(plan.picks.map(c => c.sc))].join(' / ');
-  const d = { kind: 'refine', title: `${S.mat} ${what}`, spend: plan.picks.reduce((a, c) => a + c.n * c.spend, 0),
-    profit: plan.picks.reduce((a, c) => a + c.n * c.profit, 0), buy: plan.picks.flatMap(c => refineBuy(c, c.n)),
-    make: `Refine ${what} ${m.out.toLowerCase()} in ${refineCity()} (keep refining the returns)`, sell: `Sell in ${sells}`,
-    sellItems: plan.picks.map(c => ({ id: c.outId, qty: c.n })), sellCity: plan.picks[0].sc };
-  return `<div class="card"><span class="big-profit pos">+${fmt(d.profit)}</span>
-    <small>Refine ${plan.picks.map(c => `<b>${c.n}× T${c.t}.${c.e}</b>`).join(', ')} ${m.out.toLowerCase()} in <b>${refineCity()}</b>, then sell in <b>${sells}</b>.</small>
-    ${todayBuyList(d.buy, `Costs ≈ ${fmt(d.spend)} with fees. Keep refining the returned materials until they run out.`)}
-    ${cardActions(d, '<button data-plansession>Session →</button>')}</div>`;
+  const list = plan.candidates.map(c => ({ c, sugg: Math.min(100, Math.floor((plan.V[`${c.outId}|${c.sc}`] || 0) * S.planShare / 100)) }))
+    .filter(x => x.sugg > 0).sort((a, b) => b.sugg * b.c.profit - a.sugg * a.c.profit).slice(0, max);
+  return list.length ? `<div class="cards">${list.map(({ c, sugg }) => {
+    const key = `refine|${S.mat}|${c.t}|${c.e}`;
+    return refineCard(c, amount(key, sugg), `amt.${key}`);
+  }).join('')}</div>` : `<p class="hint">Nothing profitable to refine in ${S.mat} right now.</p>`;
 }
 const craftCards = (crafts, max) => {
   if (!crafts) return '<p class="hint">Looking…</p>';
   if (crafts.error) return `<p class="hint neg">${crafts.error}</p>`;
-  const list = crafts.map((c, i) => ({ c, i, n: fitBudget(c.cost + c.fee, c.n) })).filter(x => x.n > 0).slice(0, max);
-  return list.length ? `<div class="cards">${list.map(({ c, i, n }) => craftCard(c, n, 'craft', `<button data-today="${i}">Session →</button>`)).join('')}</div>`
-    : '<p class="hint">No gear craft is profitable for your budget right now.</p>';
+  const list = crafts.map((c, i) => ({ c, i })).slice(0, max);
+  return list.length ? `<div class="cards">${list.map(({ c, i }) => {
+    const key = `craft|${c.g.id}|${c.t}|${c.e}`;
+    return craftCard(c, amount(key, Math.min(c.n, 10)), 'craft', `<button data-today="${i}">Session →</button>`, `amt.${key}`);
+  }).join('')}</div>` : '<p class="hint">No gear craft is profitable right now.</p>';
 };
 const foodCards = (food, max) => {
   if (!food) return '<p class="hint">Looking…</p>';
   if (food.error) return `<p class="hint neg">${food.error}</p>`;
-  const list = food.map(c => ({ c, n: fitBudget(c.cost + c.fee, Math.floor(c.vol * S.planShare / 100 / c.a)) })).filter(x => x.n > 0).slice(0, max);
-  return list.length ? `<div class="cards">${list.map(({ c, n }) => craftCard(c, n, 'cook', `<button data-food="${c.g.id}|${c.t}|${c.e}">Session →</button>`)).join('')}</div>`
-    : '<p class="hint">No food or potions are profitable for your budget right now.</p>';
+  const list = food.map(c => ({ c, sugg: Math.min(10, Math.floor(c.vol * S.planShare / 100 / c.a)) })).filter(x => x.sugg > 0).slice(0, max);
+  return list.length ? `<div class="cards">${list.map(({ c, sugg }) => {
+    const key = `cook|${c.g.id}|${c.t}|${c.e}`;
+    return craftCard(c, amount(key, sugg), 'cook', `<button data-food="${c.g.id}|${c.t}|${c.e}">Session →</button>`, `amt.${key}`);
+  }).join('')}</div>` : '<p class="hint">No food or potions are profitable right now.</p>';
 };
 
 // a Run: the simple session. A checklist: buy, make, sell in the city you pick, then log it.
@@ -2004,6 +2043,11 @@ function runHtml() {
       ${icon(x.id, x.city)}<b>${fmt(x.qty)}×</b> ${esc(itemName(x.id))} <span class="dim">~${x.price ? fmt(x.price) : '?'} · ${x.city}</span></label></li>`).join('')}</ul>
     <p><label class="chk"><input type="checkbox" data-rmade ${r.made ? 'checked' : ''}><b>2. ${esc(r.make)}</b></label></p>
     ${runSellHtml(r)}
+    ${r.spec ? `<p style="margin-bottom:4px"><b>4. Your spec</b> <span class="dim">(optional, fill in when you're done)</span></p>
+      <div class="row"><label>${esc(r.spec.treeName)} before<input type="number" min="0" data-rs="specB.tree" value="${r.specB.tree}"></label>
+        <label>after<input type="number" min="0" data-rs="specA.tree" value="${r.specA.tree}"></label></div>
+      <div class="row"><label>${esc(r.spec.itemName)} before<input type="number" min="0" data-rs="specB.item" value="${r.specB.item}"></label>
+        <label>after<input type="number" min="0" data-rs="specA.item" value="${r.specA.item}"></label></div>` : ''}
     <div class="actions" style="justify-content:flex-start"><button data-rfinish>✓ Finished, log it</button><button class="ghost" data-rcancel>Cancel run</button></div></div>`;
 }
 document.addEventListener('click', ev => {
@@ -2012,12 +2056,15 @@ document.addEventListener('click', ev => {
     if (S.run && !confirm('Replace your current run?')) return;
     const d = cardData[+start];
     S.run = { ...d, buy: d.buy.filter(x => x.qty).map(x => ({ ...x, got: false })), made: false, started: Date.now() };
+    if (d.spec) { S.run.specB = { tree: specGet(d.spec.tree), item: specGet(d.spec.item) }; S.run.specA = { ...S.run.specB }; }
     S.tab = 'today'; save(); scrollTo(0, 0); renderAll();
   }
   if (t.closest('[data-rfinish]')) {
     const r = S.run, profit = runProfit(r, r.sellCity) ?? r.profit;
     withUndo(`Logged ${profit >= 0 ? '+' : ''}${fmt(profit)} to your run log`, () => {
-      addLog({ kind: r.kind, title: r.title + (r.sellCity ? ` → ${r.sellCity}` : ''), spent: Math.round(r.spend), earned: Math.round(r.spend + profit) });
+      const spec = r.spec && r.specA.item !== r.specB.item ? ` · spec ${r.specB.item}→${r.specA.item}` : '';
+      if (r.spec) { specSet(r.spec.tree, r.specA.tree); specSet(r.spec.item, r.specA.item); }
+      addLog({ kind: r.kind, title: r.title + (r.sellCity ? ` → ${r.sellCity}` : '') + spec, spent: Math.round(r.spend), earned: Math.round(r.spend + profit) });
       S.run = null;
     });
   }
@@ -2030,20 +2077,26 @@ document.addEventListener('change', ev => {
   if ('rmade' in t.dataset) { S.run.made = t.checked; save(); renderAll(); }
   if ('rcity' in t.dataset) { S.run.sellCity = t.value; save(); renderAll(); }
 });
+document.addEventListener('input', ev => {  // spec boxes save as you type
+  const p = ev.target.dataset.rs;
+  if (S.run && p) { const [o, k] = p.split('.'); S.run[o][k] = +ev.target.value || 0; save(); }
+});
 
 // ---------- craft something specific: search any item, simple card, ▶ Start ----------
 let custKey = '', custLoading = false;
 async function loadCustom(g, t, e) {
   custLoading = true; renderAll();
-  try { await fetchPrices([...recipeOf(g, t, e).map(([tmpl]) => resId(tmpl, e)), gearId(g, t, e)], '1', CITIES, 'prices'); } catch {}
+  try {
+    await fetchPrices(recipeOf(g, t, e).map(([tmpl]) => resId(tmpl, e)), '1', CITIES, 'prices');
+    await fetchPrices([gearId(g, t, e)], isCons(g) ? '1' : '1,2,3,4,5', CITIES, 'prices');  // every quality, for gear
+  } catch {}
   custLoading = false; renderAll();
 }
 function customHtml() {
   const c = S.custom ||= { gid: '', t: 4, e: 0, n: 10 }, g = D.gear.find(x => x.id === c.gid);
   let out = `<div class="row"><label>Item<input list="gearList" data-cust="name" value="${g ? esc(gName(g, c.t)) : ''}" placeholder="Search any gear, food or potion"></label>`;
   if (g) out += `<label>Tier<select data-cust="t">${opts(g.t, c.t)}</select></label>
-    <label>Enchant<select data-cust="e">${opts(ENCH.filter(e => g.f[c.t][e] != null), c.e)}</select></label>
-    <label>Crafts<input type="number" min="1" data-cust="n" value="${c.n}"></label>`;
+    <label>Enchant<select data-cust="e">${opts(ENCH.filter(e => g.f[c.t][e] != null), c.e)}</select></label>`;
   out += '</div>';
   if (!g) return out + '<p class="hint">Type part of a name (e.g. "Broadsword", "Pork Omelette", "Healing Potion") and pick it from the list.</p>';
   const key = `${g.id}|${c.t}|${c.e}`;
@@ -2058,7 +2111,7 @@ function customHtml() {
     const missing = tries[0].mats.filter(m => !CITIES.some(bc => price(m.id, bc, 'buy').v)).map(m => itemName(m.id));
     return out + `<p class="hint">No recent market price for ${missing.length ? missing.map(esc).join(', ') : `${esc(gName(g, c.t))} itself`} in any city. Try another tier or enchant, or check again later.</p>`;
   }
-  return out + `<div class="cards">${craftCard(cc, Math.max(1, c.n), isCons(g) ? 'cook' : 'craft', '')}</div>
+  return out + `<div class="cards">${craftCard(cc, Math.max(1, c.n), isCons(g) ? 'cook' : 'craft', '', 'custom.n')}</div>
     ${cc.profit < 0 ? '<p class="hint neg">This loses money at today\'s prices. You can still start it if you\'re crafting for spec or your own use.</p>' : ''}`;
 }
 document.addEventListener('change', ev => {
@@ -2076,14 +2129,11 @@ document.addEventListener('change', ev => {
 // refine a specific tier
 function refineCustomHtml() {
   const c = S.rcustom ||= { t: 4, e: 0, n: 100 }, m = MATS[S.mat], outId = itemId(c.t, c.e, m.out);
-  const form = `<div class="row"><label>Tier<select data-rcust="t">${opts(TIERS, c.t)}</select></label><label>Enchant<select data-rcust="e">${opts(ENCH, c.e)}</select></label>
-    <label>Refines<input type="number" min="1" data-rcust="n" value="${c.n}"></label></div>`;
+  const form = `<div class="row"><label>Tier<select data-rcust="t">${opts(TIERS, c.t)}</select></label><label>Enchant<select data-rcust="e">${opts(ENCH, c.e)}</select></label></div>`;
   const best = bestSell(outId), r = calcRefine(c.t, c.e, false, buyCity(), best?.c || refineCity());
   if (!r.ok) return form + `<p class="hint">${todayBusy ? 'Loading prices…' : 'No market price yet for this tier. Try another one.'}</p>`;
-  const x = { ...r, bc: buyCity(), sc: best?.c || refineCity(), spend: r.cost + r.fee, outId }, n = Math.max(1, c.n);
-  const d = { kind: 'refine', title: `${S.mat} T${c.t}.${c.e}×${n}`, spend: n * x.spend, profit: n * x.profit, buy: refineBuy(x, n),
-    make: `Refine ${n}× T${c.t}.${c.e} ${m.out.toLowerCase()} in ${refineCity()}`, sell: `Sell in ${x.sc}`, sellItems: [{ id: outId, qty: n }], sellCity: x.sc };
-  return form + `<div class="cards">${pickCard(d, outId, x.sc, `T${c.t}.${c.e} ${m.out.toLowerCase()}`, `${n} refines in <b>${refineCity()}</b>, sell in <b>${x.sc}</b>`, '')}</div>`;
+  const x = { ...r, bc: buyCity(), sc: best?.c || refineCity(), spend: r.cost + r.fee, outId };
+  return form + `<div class="cards">${refineCard(x, Math.max(1, c.n), 'rcustom.n')}</div>`;
 }
 document.addEventListener('change', ev => {
   const k = ev.target.dataset.rcust;
@@ -2111,7 +2161,7 @@ function renderToday() {
   document.getElementById('tStock').innerHTML = adv && st.length ? `<p>📦 <b>${st.length}</b> items in stock, worth about <b>${fmt(worth)}</b>. <button class="ghost sm" data-go="stock">Open stock</button></p>` : '';
   renderInstallBanner();
   document.getElementById('tCustom').innerHTML = customHtml();
-  document.getElementById('tRefine').innerHTML = planCard(d.plan);
+  document.getElementById('tRefine').innerHTML = refineCards(d.plan, 2);
   document.getElementById('tCraft').innerHTML = d.plan ? craftCards(d.crafts, 3) : '';
   document.getElementById('tFood').innerHTML = d.crafts ? foodCards(d.food, 3) : '';
   return todayBusy ? 'finding today\'s best…' : '';
@@ -2122,18 +2172,7 @@ function renderSimpleTab(tab) {
   cardData = [];
   const d = todayData || {}, el = document.getElementById('s' + tab);
   if (tab === 'refine') {
-    const plan = d.plan, opts = plan?.candidates ? plan.candidates.map(c => {
-      const n = fitBudget(c.spend, Math.floor((plan.V[`${c.outId}|${c.sc}`] || 0) * S.planShare / 100));
-      return { c, n };
-    }).filter(x => x.n > 0).sort((a, b) => b.n * b.c.profit - a.n * a.c.profit) : [];
-    const m = MATS[S.mat];
-    el.innerHTML = `<h3>✏️ Refine a specific tier</h3>${refineCustomHtml()}<h3>Best mix for your budget</h3>${planCard(plan)}
-      ${opts.length ? `<h3>Or refine just one tier</h3><div class="cards">${opts.slice(0, 8).map(({ c, n }) => {
-        const dd = { kind: 'refine', title: `${S.mat} T${c.t}.${c.e}×${n}`, spend: n * c.spend, profit: n * c.profit, buy: refineBuy(c, n),
-          make: `Refine ${n}× T${c.t}.${c.e} ${m.out.toLowerCase()} in ${refineCity()}`, sell: `Sell in ${c.sc}`,
-          sellItems: [{ id: c.outId, qty: n }], sellCity: c.sc };
-        return pickCard(dd, c.outId, c.sc, `T${c.t}.${c.e} ${m.out.toLowerCase()}`, `${n} refines in <b>${refineCity()}</b>, sell in <b>${c.sc}</b>`, '');
-      }).join('')}</div>` : ''}`;
+    el.innerHTML = `<h3>✏️ Refine a specific tier</h3>${refineCustomHtml()}<h3>Best tiers right now</h3>${refineCards(d.plan, 8)}`;
   } else if (tab === 'craft') el.innerHTML = `<h3>✏️ Craft something specific</h3>${customHtml()}<h3>Best picks right now</h3>${craftCards(d.crafts, 8)}`;
   else el.innerHTML = `<h3>✏️ Cook or brew something specific</h3>${customHtml()}<h3>Best picks right now</h3>${foodCards(d.food, 10)}`;
   return todayBusy ? 'finding the best picks…' : '';
@@ -2215,6 +2254,7 @@ document.addEventListener('click', ev => {
 const ADV_TABS = ['session', 'stock', 'flip'];
 function renderAll() {
   document.body.classList.toggle('simple', !!S.simple);
+  document.getElementById('install').hidden = isStandalone();
   if (S.simple && ADV_TABS.includes(S.tab)) S.tab = 'today';
   document.getElementById('allTools').textContent = S.simple ? 'Show all tools' : 'Back to simple';
   document.querySelectorAll('[data-page]').forEach(p => p.hidden = p.dataset.page !== S.tab);
