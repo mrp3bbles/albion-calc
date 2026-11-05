@@ -150,6 +150,7 @@ body.simple nav [data-adv]{display:none!important}
 body:not(.simple) .simple-only{display:none!important}
 body.simple [data-page=refine]>section:not(.simple-only),body.simple [data-page=craft]>section:not(.simple-only),body.simple [data-page=food]>section:not(.simple-only){display:none}
 .big-profit{font-size:26px;font-weight:700;margin:2px 0}
+a.btnlink{display:inline-block;background:var(--gold);color:#1a1208;font-weight:600;padding:10px 16px;border-radius:8px;text-decoration:none}
 .amt{display:flex;align-items:center;gap:6px;margin:4px 0;flex-wrap:wrap}
 .amt input{width:84px!important;text-align:center}
 .amt button{min-width:42px}
@@ -2182,6 +2183,12 @@ function renderSimpleTab(tab) {
 
 // ---------- install as an app ----------
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+// the Android app (a signed APK that opens this site full-screen), for phones whose Chrome won't install sites
+const APK_STEPS = `<p><a href="albion-calc.apk" download class="btnlink">⬇ Download the Android app</a></p>
+  <ol><li>Open the downloaded <b>albion-calc.apk</b> (from the notification or your Downloads).</li>
+  <li>If asked, allow Chrome to <b>install unknown apps</b>, then go back.</li>
+  <li>Tap <b>Install</b>. If Play Protect warns you, tap <b>More details → Install anyway</b>. That happens for any app that isn't from the Play Store.</li></ol>
+  <p class="hint">The app shows this same site, so it updates by itself whenever the site does.</p>`;
 function installSteps() {
   const ua = navigator.userAgent;
   if (isStandalone()) return '<p class="pos">✓ You\'re using the installed app.</p>';
@@ -2191,9 +2198,9 @@ function installSteps() {
   if (/CriOS/.test(ua)) return '<ol><li>Tap the <b>Share</b> icon (↑) in Chrome\'s address bar.</li><li>Tap <b>Add to Home Screen</b> (scroll down if needed), then <b>Add</b>.</li></ol>';
   if (/iPhone|iPad|iPod/.test(ua)) return '<ol><li>Tap the <b>Share</b> button (square with ↑) at the bottom of Safari.</li><li>Scroll down, tap <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol>';
   if (/SamsungBrowser/.test(ua)) return `${button}<ol><li>Tap the menu <b>≡</b> at the bottom right.</li><li>Tap <b>Add page to</b> → <b>Home screen</b>.</li></ol>`;
-  if (/Android/.test(ua)) return `${button}<ol><li>Tap Chrome's menu <b>⋮</b> (top right).</li>
+  if (/Android/.test(ua)) return `${button}${APK_STEPS}<details><summary class="hint">Or add it from Chrome's menu instead</summary><ol><li>Tap Chrome's menu <b>⋮</b> (top right).</li>
     <li>Look for <b>Add to home screen</b> or <b>Install app</b>. On newer Chrome it's inside <b>Cast, save and share</b> (scroll the menu down).</li>
-    <li>Tap <b>Install</b> / <b>Add</b>. The app icon appears on your home screen.</li></ol>`;
+    <li>Tap <b>Install</b> / <b>Add</b>. The app icon appears on your home screen.</li></ol></details>`;
   return `${button}<p>In Chrome: menu <b>⋮</b> → <b>Cast, save, and share</b> → <b>Install page as app…</b> (older Chrome: the install icon at the right of the address bar). In Edge: menu → <b>Apps</b> → <b>Install this site as an app</b>.</p>`;
 }
 function renderInstallBanner() {

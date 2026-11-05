@@ -1,2 +1,9 @@
 .wrangler/
 node_modules/
+android-signing/
+android/app/build/
+android/build/
+android/.gradle/
+*.keystore
+android/local.properties
+*.idsig
