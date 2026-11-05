@@ -1754,7 +1754,9 @@ document.getElementById('install').onclick = async () => {
   if (installPrompt) { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; return renderAll(); }
   document.getElementById('instBody').innerHTML = installSteps() + `<p class="hint">A website can't install itself: the browser has to offer it.
     Chrome usually starts offering it after you've used the site for a minute or two, so try this button again later.
-    Until then, bookmark the page or keep it open in a tab.</p>`;
+    Until then, bookmark the page or keep it open in a tab.</p>
+    <p class="hint">Check: ${(navigator.userAgent.match(/Chrome\/(\d+)/) || [, ''])[1] ? 'Chrome ' + navigator.userAgent.match(/Chrome\/(\d+)/)[1] : 'not Chrome'}
+    · install offered: ${installPrompt ? 'yes' : 'no'} · offline: ${navigator.serviceWorker?.controller ? 'ready' : 'not yet'}</p>`;
   document.getElementById('instDlg').showModal();
 };
 document.addEventListener('click', ev => { if (ev.target.closest('[data-closeinst]')) document.getElementById('instDlg').close(); });
